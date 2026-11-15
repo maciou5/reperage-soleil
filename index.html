@@ -64,9 +64,17 @@ details{font-size:13px;color:var(--mute)}
 details summary{cursor:pointer;color:var(--ink);font-weight:600}
 .lbtn{position:absolute;z-index:1000;right:10px;top:10px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font:inherit;font-size:13px;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.15)}
 #mapwrap{position:relative;flex:1;display:flex;min-height:0}
-@media (max-width:820px){#mapwrap{flex:none;height:46vh}}
+@media (max-width:820px){#mapwrap{flex:none;height:54vh}}
 #map{width:100%}
 .hidden{display:none!important}
+#timebar{position:absolute;left:8px;right:8px;bottom:8px;z-index:1000;background:rgba(255,255,255,.95);border-radius:12px;padding:6px 8px 2px;box-shadow:0 2px 10px rgba(0,0,0,.18)}
+#timebar canvas{touch-action:none;cursor:ew-resize}
+.tb-top{display:flex;align-items:center;gap:6px;font-size:13px;flex-wrap:wrap}
+#tbDate{font-weight:600;min-width:46px;text-align:center}
+#tbTime{margin-left:4px;font-size:12.5px;line-height:1.25}
+.tbb{border:0;background:#ebe8e1;border-radius:7px;min-width:30px;height:28px;font:inherit;font-size:14px;cursor:pointer;padding:0 6px}
+#playBtn{background:var(--acc);color:#fff}
+body.tb-on .leaflet-bottom{bottom:96px}
 .src{font-size:12px;color:var(--mute);margin-top:4px}
 </style>
 </head>
@@ -78,7 +86,13 @@ details summary{cursor:pointer;color:var(--ink);font-weight:600}
   <ul id="sugg"></ul>
 </header>
 <div id="main">
-  <div id="mapwrap"><div id="map"></div><button class="lbtn" id="layerBtn">Photo aérienne</button></div>
+  <div id="mapwrap"><div id="map"></div><button class="lbtn" id="layerBtn">Photo aérienne</button>
+    <div id="timebar" class="hidden">
+      <div class="tb-top"><button id="playBtn" class="tbb" title="Faire défiler la journée">▶</button>
+        <button id="dPrev" class="tbb" title="Jour précédent">‹</button><span id="tbDate"></span><button id="dNext" class="tbb" title="Jour suivant">›</button>
+        <span id="tbTime"></span></div>
+      <canvas id="tbCv"></canvas>
+    </div></div>
   <div id="panel">
     <div class="card">
       <div class="seg" id="modeSeg">
@@ -106,7 +120,8 @@ details summary{cursor:pointer;color:var(--ink);font-weight:600}
       <div class="card">
         <h2>Journée heure par heure</h2>
         <canvas id="dayCv" height="70"></canvas>
-        <input type="range" id="tSlider" min="0" max="1435" step="5">
+        <input type="range" id="tSlider" min="0" max="1440" step="1" class="hidden">
+        <div class="hint" style="margin-top:4px">Faites glisser la frise en bas de la carte pour changer l'heure.</div>
         <div id="tinfo"></div>
         <label style="font-size:13px;display:flex;gap:6px;align-items:center;margin-top:4px"><input type="checkbox" id="shadowChk" checked> Afficher les ombres sur la carte à cette heure</label>
       </div>
@@ -475,7 +490,7 @@ function todayParis() {
   return p.year+'-'+p.month+'-'+p.day;
 }
 $('#date').value = todayParis();
-$('#date').addEventListener('change', () => { if (S.res) compute(); });
+$('#date').addEventListener('change', () => { if (S.res) compute(); else if (S.area) setTime(S.t, 'hi'); });
 $('#height').addEventListener('change', () => { if (S.res) compute(); });
 $('#goBtn').onclick = () => compute();
 
@@ -603,7 +618,7 @@ function nearestOpen(A, P) {
 // ---------- placement des repères ----------
 async function setObs(lat, lon, opt) {
   opt = opt || {};
-  S.obs = {lat, lon}; S.adj = 0;
+  S.obs = {lat, lon}; S.adj = 0; if (!S.tUser) S.t = null;
   obsMarker.setLatLng([lat, lon]).addTo(map);
   notice(null); updateGo(); clearResults();
   const id = ++S.loadingId;
@@ -612,13 +627,14 @@ async function setObs(lat, lon, opt) {
     if (!S.area || distM(S.area, S.area.P, P) > 70) {
       const A = await loadArea(lat, lon);
       if (id !== S.loadingId) return;
-      S.area = A; drawArea();
+      S.area = A; drawArea(); S.dayKey = null;
     }
     if (id !== S.loadingId) return;
     const A = S.area;
     const z = zAt(A, P.x, P.y), g = groundAt(A, P.x, P.y);
     S.inBuilding = (z - g) > 1.5;
     status('Prêt. Source : ' + LAYERS[A.src].label + '. ' + A.note);
+    showTimebar();
     if (S.inBuilding) {
       const q = nearestOpen(A, P);
       if (opt.autoSnap && q) {
@@ -805,13 +821,13 @@ function showResults() {
   const A = S.area;
   $('#srcInfo').textContent = 'Relief : ' + LAYERS[A.src].label + '. Point calculé à ' + (R.zEye - groundAt(A, R.P.x, R.P.y)).toFixed(1) + ' m du sol' +
     (facMode ? ', 1 m devant la façade.' : '.');
-  // curseur horaire
-  const sl = $('#tSlider');
-  const nowMin = (() => { if ($('#date').value !== todayParis()) return null;
-    const p = {}; for (const x of new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Paris',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date())) p[x.type]=x.value; return +p.hour*60 + +p.minute; })();
-  let t0 = nowMin != null && rise != null && nowMin > rise && nowMin < set ? nowMin : (merged.length ? Math.round((merged[0].start + merged[0].end)/2) : 720);
-  sl.value = Math.round(t0/5)*5;
-  drawDay(); drawPolar(); drawYear(); fillMonths(); updateTime(true);
+  // curseur horaire : heure actuelle (aujourd'hui), sinon milieu du premier créneau au soleil
+  if (!S.tUser) {
+    const now = $('#date').value === todayParis() ? nowParisMin() : null;
+    S.t = now != null && rise != null && now > rise && now < set ? now : (merged.length ? Math.round((merged[0].start + merged[0].end)/2) : 720);
+  }
+  $('#tSlider').value = S.t;
+  drawYear(); fillMonths(); showTimebar();
 }
 
 function setupCanvas(cv, cssH) {
@@ -917,7 +933,7 @@ $('#yearCv').addEventListener('click', e => {
   const st = row.cells[c];
   $('#ginfo').innerHTML = '<b>' + row.d + ' ' + MONTHS[row.m-1] + ', ' + hm(240 + c*10) + '</b> : ' + STATE_TXT[st] +
     ' <button class="chip" id="goDay">Voir ce jour</button>';
-  $('#goDay').onclick = () => { $('#date').value = row.y + '-' + String(row.m).padStart(2,'0') + '-' + String(row.d).padStart(2,'0'); compute(); $('#tSlider').value = 240 + c*10; updateTime(true); };
+  $('#goDay').onclick = () => { $('#date').value = row.y + '-' + String(row.m).padStart(2,'0') + '-' + String(row.d).padStart(2,'0'); S.tUser = true; S.t = 240 + c*10; compute(); };
 });
 
 function fillMonths() {
@@ -939,14 +955,117 @@ function fillMonths() {
   }
 }
 
-$('#tSlider').addEventListener('input', () => updateTime(false));
-$('#tSlider').addEventListener('change', () => updateTime(true));
-$('#shadowChk').addEventListener('change', () => updateTime(true));
-function updateTime(withShadow) {
-  const R = S.res; if (!R) return;
-  const t = +$('#tSlider').value, D = R.D;
-  const s = C.solarPosition(C.parisToUTC(D.y, D.m, D.d, t), R.ll.lat, R.ll.lon);
-  const st = C.lightState(s, R.hz, R.normal);
+
+// ---------- frise horaire sur la carte, ombres et lumière en direct ----------
+// Calque « canvas » positionné comme une image géoréférencée (pas d'encodage PNG à chaque image)
+const CanvasOverlay = L.ImageOverlay.extend({
+  _initImage: function () {
+    const el = this._image = this._url;
+    L.DomUtil.addClass(el, 'leaflet-image-layer');
+    if (this._zoomAnimated) L.DomUtil.addClass(el, 'leaflet-zoom-animated');
+    el.onselectstart = L.Util.falseFn; el.onmousemove = L.Util.falseFn;
+  }
+});
+const shadowCv = document.createElement('canvas');
+const tintPane = map.createPane('tint'); tintPane.style.zIndex = 350; tintPane.style.pointerEvents = 'none';
+const tintDiv = document.createElement('div');
+tintDiv.style.cssText = 'position:absolute;left:-10000px;top:-10000px;width:20000px;height:20000px;transition:background .25s';
+tintPane.appendChild(tintDiv);
+const sunLine = L.polyline([], {color:'#f2a20c', weight:3, dashArray:'6 6', interactive:false});
+const sunDot = L.circleMarker([0,0], {radius:9, color:'#fff', weight:2, fillColor:'#f2a20c', fillOpacity:1, interactive:false});
+S.t = null; S.tUser = false;
+
+function curDate() { const [y,m,d] = $('#date').value.split('-').map(Number); return {y,m,d}; }
+function curLL() { return S.res ? S.res.ll : (S.obs ? {lat:S.obs.lat, lon:S.obs.lon} : null); }
+function sunAt(t) { const D = curDate(), ll = curLL(); return C.solarPosition(C.parisToUTC(D.y, D.m, D.d, t), ll.lat, ll.lon); }
+function nowParisMin() { const p = {}; for (const x of new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Paris',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date())) p[x.type]=x.value; return +p.hour*60 + +p.minute; }
+// lever / coucher et plage affichée par la frise
+function dayInfo() {
+  const D = curDate(), ll = curLL(), key = $('#date').value + ll.lat.toFixed(3) + ll.lon.toFixed(3);
+  if (S.dayKey === key) return S.dayInfo;
+  let rise = null, set = null; const els = new Float32Array(1441);
+  for (let m = 0; m <= 1440; m++) {
+    const e = C.solarPosition(C.parisToUTC(D.y, D.m, D.d, m), ll.lat, ll.lon).el; els[m] = e;
+    if (m && els[m-1] <= -0.3 && e > -0.3 && rise == null) rise = m;
+    if (m && els[m-1] > -0.3 && e <= -0.3) set = m;
+  }
+  const t0 = Math.max(0, (rise ?? 300) - 75), t1 = Math.min(1440, (set ?? 1260) + 75);
+  S.dayKey = key; S.dayInfo = {rise, set, t0, t1, els};
+  return S.dayInfo;
+}
+function lightColor(el) {
+  if (el <= -6) return 'rgba(8,14,40,.55)';
+  if (el <= -0.3) return 'rgba(40,45,105,' + (0.25 + 0.3*(-el/6)).toFixed(2) + ')';
+  if (el < 6) return 'rgba(255,130,30,' + (0.22 - 0.02*el).toFixed(2) + ')';
+  if (el < 15) return 'rgba(255,190,90,' + (0.10 - 0.008*(el-6)).toFixed(3) + ')';
+  return 'rgba(0,0,0,0)';
+}
+function elColor(el) {
+  if (el <= -6) return '#1d2433';
+  if (el <= -0.3) return '#45507f';
+  if (el < 6) return '#ee8a2a';
+  if (el < 15) return '#f4b860';
+  return '#f7dc8a';
+}
+
+function showTimebar() {
+  if (!S.obs) return;
+  $('#timebar').classList.remove('hidden'); document.body.classList.add('tb-on');
+  if (S.t == null) {
+    const di = dayInfo(), now = $('#date').value === todayParis() ? nowParisMin() : null;
+    S.t = now != null && now > di.t0 && now < di.t1 ? now : 720;
+  }
+  setTime(S.t, 'hi');
+}
+function drawTimebar() {
+  const cv = $('#tbCv'), {ctx, w, h} = setupCanvas(cv, 48), di = dayInfo();
+  const L0 = 6, W = w - 12, x = m => L0 + W*(m - di.t0)/(di.t1 - di.t0);
+  ctx.clearRect(0,0,w,h);
+  // fond : lumière du jour
+  for (let m = di.t0; m < di.t1; m += 2) { ctx.fillStyle = elColor(di.els[m]); ctx.fillRect(x(m), 4, W*2/(di.t1-di.t0) + 0.6, 16); }
+  // bande : point ou façade au soleil / à l'ombre
+  if (S.res) {
+    for (const p of S.res.tl) { if (p.min < di.t0 || p.min >= di.t1) continue; ctx.fillStyle = COLORS[p.st]; ctx.fillRect(x(p.min), 22, W*2/(di.t1-di.t0) + 0.6, 7); }
+  }
+  ctx.font = '10px system-ui'; ctx.fillStyle = '#667085'; ctx.textAlign = 'center';
+  for (let hh = Math.ceil(di.t0/60); hh*60 <= di.t1; hh++) { const xx = x(hh*60); ctx.fillRect(xx, 30, 1, 3); if (hh % 2 === 0 || W > 500) ctx.fillText(hh + 'h', xx, 44); }
+  ctx.fillStyle = '#1d2433'; ctx.font = '600 10px system-ui';
+  if (di.rise != null) { ctx.textAlign = 'left'; ctx.fillText('↑' + hm(di.rise), x(di.rise) + 2, 15); }
+  if (di.set != null) { ctx.textAlign = 'right'; ctx.fillText(hm(di.set) + '↓', x(di.set) - 2, 15); }
+  // curseur
+  const xc = x(Math.min(di.t1, Math.max(di.t0, S.t)));
+  ctx.fillStyle = '#000'; ctx.fillRect(xc - 1.5, 1, 3, 30);
+  ctx.beginPath(); ctx.arc(xc, 31, 6, 0, 2*Math.PI); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#000'; ctx.stroke();
+  S.tbGeom = {L0, W, t0: di.t0, t1: di.t1};
+}
+let hiTimer = null, rafPending = false;
+function setTime(t, quality) {
+  const di = dayInfo();
+  S.t = Math.max(di.t0, Math.min(di.t1, Math.round(t)));
+  $('#tSlider').value = S.t;
+  const s = sunAt(S.t);
+  // texte
+  let txt = '<b>' + hm(S.t) + '</b> ';
+  if (s.el <= -0.3) txt += '· soleil couché';
+  else txt += '· soleil ' + dir8(s.az) + ' ' + s.el.toFixed(0) + '°' + (s.el < 6 ? ' · lumière dorée' : '');
+  if (S.res && s.el > -0.3) { const st = C.lightState(s, S.res.hz, S.res.normal); txt += ' · <span style="color:' + (isLit(st) ? '#b45309' : '#475467') + '">' + (S.res.normal != null ? 'façade ' : 'point ') + STATE_TXT[st] + '</span>'; }
+  $('#tbTime').innerHTML = txt;
+  const D = curDate(); $('#tbDate').textContent = D.d + ' ' + MON3[D.m-1];
+  tintDiv.style.background = lightColor(s.el);
+  // direction du soleil depuis le point
+  if (S.obs && s.el > -0.3) {
+    const P = C.toMerc(S.obs.lat, S.obs.lon), k = 1/Math.cos(S.obs.lat*Math.PI/180), L_ = 90*k;
+    const e = C.fromMerc(P.x + Math.sin(s.az*Math.PI/180)*L_, P.y + Math.cos(s.az*Math.PI/180)*L_);
+    sunLine.setLatLngs([[S.obs.lat, S.obs.lon],[e.lat, e.lon]]).addTo(map); sunDot.setLatLng([e.lat, e.lon]).addTo(map);
+  } else { map.removeLayer(sunLine); map.removeLayer(sunDot); }
+  drawTimebar();
+  if (S.res) updatePanelTime(s);
+  renderShadow(s, quality === 'hi' ? 'hi' : 'lo');
+  clearTimeout(hiTimer);
+  if (quality !== 'hi') hiTimer = setTimeout(() => renderShadow(sunAt(S.t), 'hi'), 220);
+}
+function updatePanelTime(s) {
+  const R = S.res, t = S.t, st = C.lightState(s, R.hz, R.normal);
   let txt = '<b>' + hm(t) + '</b> — ';
   if (s.el <= -0.3) txt += 'soleil couché.';
   else {
@@ -958,19 +1077,58 @@ function updateTime(withShadow) {
   }
   $('#tinfo').innerHTML = txt;
   drawDay(); drawPolar();
-  if (withShadow) drawShadow(s);
 }
-function drawShadow(s) {
-  if (shadowOverlay) { map.removeLayer(shadowOverlay); shadowOverlay = null; }
-  if (!$('#shadowChk').checked || !S.area || s.el <= 0.5) return;
-  const g = S.area.outer, mask = C.shadowMask(g, s, S.area.k);
-  const cv = document.createElement('canvas'); cv.width = g.w; cv.height = g.h;
-  const ctx = cv.getContext('2d'), im = ctx.createImageData(g.w, g.h);
-  for (let i = 0; i < mask.length; i++) if (mask[i]) { im.data[i*4] = 25; im.data[i*4+1] = 35; im.data[i*4+2] = 110; im.data[i*4+3] = 120; }
+// grille réduite (2 m, maximum des 4 pixels) pour le calcul en direct
+function loGrid(A) {
+  if (A.lo) return A.lo;
+  const g = A.outer, w = g.w >> 1, h = g.h >> 1, d = new Float32Array(w*h);
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+    let m = -1e9; for (const [a,b] of [[0,0],[1,0],[0,1],[1,1]]) { const v = g.data[(2*j+b)*g.w + 2*i+a]; if (v > m) m = v; }
+    d[j*w+i] = m;
+  }
+  return A.lo = {data:d, w, h, x0:g.x0, y1:g.y1, res:g.res*2};
+}
+function renderShadow(s, quality) {
+  const A = S.area;
+  if (!A || !$('#shadowChk').checked || s.el <= 0.3) { if (shadowOverlay) { map.removeLayer(shadowOverlay); shadowOverlay = null; } return; }
+  const g = quality === 'hi' ? A.outer : loGrid(A);
+  const mask = C.shadowMask(g, s, A.k);
+  if (shadowCv.width !== g.w) { shadowCv.width = g.w; shadowCv.height = g.h; }
+  const ctx = shadowCv.getContext('2d'), im = ctx.createImageData(g.w, g.h);
+  const a = s.el < 6 ? 150 : 120;
+  for (let i = 0; i < mask.length; i++) if (mask[i]) { im.data[i*4] = 20; im.data[i*4+1] = 30; im.data[i*4+2] = 100; im.data[i*4+3] = a; }
   ctx.putImageData(im, 0, 0);
   const sw = C.fromMerc(g.x0, g.y1 - g.h*g.res), ne = C.fromMerc(g.x0 + g.w*g.res, g.y1);
-  shadowOverlay = L.imageOverlay(cv.toDataURL(), [[sw.lat, sw.lon],[ne.lat, ne.lon]], {opacity:1, interactive:false}).addTo(map);
+  if (!shadowOverlay) shadowOverlay = new CanvasOverlay(shadowCv, [[sw.lat, sw.lon],[ne.lat, ne.lon]], {interactive:false}).addTo(map);
+  else shadowOverlay.setBounds(L.latLngBounds([[sw.lat, sw.lon],[ne.lat, ne.lon]]));
 }
+// glisser sur la frise
+(function () {
+  const cv = $('#tbCv'); let drag = false;
+  const tAt = e => { const r = cv.getBoundingClientRect(), G = S.tbGeom; return G.t0 + (e.clientX - r.left - G.L0)/G.W*(G.t1 - G.t0); };
+  cv.addEventListener('pointerdown', e => { if (!S.tbGeom) return; drag = true; stopPlay(); cv.setPointerCapture(e.pointerId); S.tUser = true; setTime(tAt(e), 'lo'); e.preventDefault(); });
+  cv.addEventListener('pointermove', e => { if (!drag) return; const t = tAt(e); if (!rafPending) { rafPending = true; requestAnimationFrame(() => { rafPending = false; setTime(t, 'lo'); }); } });
+  const end = () => { if (!drag) return; drag = false; setTime(S.t, 'hi'); };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+})();
+// lecture automatique de la journée
+let playTimer = null;
+function stopPlay() { if (playTimer) { clearInterval(playTimer); playTimer = null; $('#playBtn').textContent = '▶'; } }
+$('#playBtn').onclick = () => {
+  if (playTimer) { stopPlay(); setTime(S.t, 'hi'); return; }
+  const di = dayInfo(); if (S.t >= di.t1 - 5) S.t = di.t0;
+  S.tUser = true; $('#playBtn').textContent = '❚❚';
+  playTimer = setInterval(() => { const t = S.t + 5; if (t >= di.t1) { stopPlay(); setTime(di.t1, 'hi'); return; } setTime(t, 'lo'); }, 70);
+};
+function shiftDay(n) {
+  const D = curDate(), dt = new Date(Date.UTC(D.y, D.m-1, D.d + n));
+  $('#date').value = dt.toISOString().slice(0,10);
+  if (S.res) compute(); else setTime(S.t, 'hi');
+}
+$('#dPrev').onclick = () => shiftDay(-1); $('#dNext').onclick = () => shiftDay(1);
+$('#shadowChk').addEventListener('change', () => setTime(S.t, 'hi'));
+function updateTime() { if (S.t != null) setTime(S.t, 'hi'); }
+
 window.addEventListener('resize', () => { if (S.res) { drawDay(); drawPolar(); drawYear(); } });
 
 // ---------- recherche d'adresse ----------
