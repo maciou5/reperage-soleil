@@ -1,0 +1,1077 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Repérage soleil</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--ink:#1d2433;--mute:#667085;--line:#e4e2dc;--acc:#e07a1f;--acc2:#2f5bd3;
+  --night:#1d2433;--shade:#7d8bab;--sun:#f2c14e;--gold:#ee8a2a;--graze:#f7e3a1;--face:#e9701b;}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+#app{display:flex;flex-direction:column;height:100%}
+header{padding:8px 10px;background:var(--card);border-bottom:1px solid var(--line);position:relative;z-index:1001}
+header h1{font-size:15px;margin:0 0 6px;display:flex;align-items:center;gap:8px}
+header h1 span{color:var(--mute);font-weight:400;font-size:12px}
+#search{width:100%;padding:10px 12px;font-size:16px;border:1px solid var(--line);border-radius:10px;background:#fbfaf8}
+#sugg{position:absolute;left:10px;right:10px;top:100%;background:#fff;border:1px solid var(--line);border-radius:10px;
+  box-shadow:0 8px 24px rgba(0,0,0,.12);list-style:none;margin:2px 0 0;padding:4px;display:none;max-height:50vh;overflow:auto}
+#sugg li{padding:9px 10px;border-radius:8px;cursor:pointer}
+#sugg li:hover,#sugg li.on{background:#f1efe9}
+#main{flex:1;display:flex;min-height:0}
+#map{flex:1;min-height:0}
+#panel{width:440px;overflow:auto;background:var(--bg);border-left:1px solid var(--line);padding:10px}
+@media (max-width:820px){
+  #main{flex-direction:column}
+  #panel{width:auto;border-left:0;border-top:1px solid var(--line);flex:1}
+}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+.seg{display:flex;background:#ebe8e1;border-radius:10px;padding:3px;gap:3px}
+.seg button{flex:1;border:0;background:transparent;padding:9px 6px;border-radius:8px;font:inherit;font-weight:600;color:var(--mute);cursor:pointer}
+.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.row{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-top:10px}
+.row label{display:flex;flex-direction:column;font-size:12px;color:var(--mute);gap:3px}
+.row input{font:inherit;font-size:16px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.row input[type=number]{width:90px}
+.btn{border:0;background:var(--acc);color:#fff;font:inherit;font-weight:600;padding:9px 14px;border-radius:9px;cursor:pointer}
+.btn.ghost{background:#ebe8e1;color:var(--ink)}
+.btn:disabled{opacity:.5}
+.hint{font-size:13px;color:var(--mute);margin-top:8px}
+#status{font-size:13px;margin-top:8px;min-height:18px}
+#status.err{color:#b42318}
+.notice{background:#fff6e5;border:1px solid #f3d9a4;border-radius:10px;padding:8px 10px;font-size:13px;margin-top:8px;display:none}
+.notice .btn{padding:5px 10px;font-size:13px;margin-top:6px}
+h2{font-size:14px;margin:0 0 8px}
+.big{font-size:16px;font-weight:600;margin:0 0 4px}
+.slots{margin:6px 0 0;padding:0;list-style:none}
+.slots li{padding:3px 0;display:flex;gap:8px;align-items:center}
+.dot{width:12px;height:12px;border-radius:3px;display:inline-block;flex:none}
+canvas{width:100%;display:block;touch-action:manipulation}
+#tinfo{font-size:13px;margin-top:6px;min-height:36px}
+input[type=range]{width:100%;margin-top:8px}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--mute);margin-top:6px}
+.legend span{display:flex;align-items:center;gap:4px}
+#ginfo{font-size:13px;margin-top:6px;min-height:18px}
+table.months{width:100%;border-collapse:collapse;font-size:13px}
+table.months td{padding:4px 2px;border-top:1px solid var(--line);vertical-align:top}
+table.months td:first-child{color:var(--mute);width:62px}
+.favs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{background:#ebe8e1;border-radius:999px;padding:5px 10px;font-size:13px;cursor:pointer;border:0;font:inherit}
+.chip b{margin-left:6px;color:var(--mute);font-weight:400}
+details{font-size:13px;color:var(--mute)}
+details summary{cursor:pointer;color:var(--ink);font-weight:600}
+.lbtn{position:absolute;z-index:1000;right:10px;top:10px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font:inherit;font-size:13px;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.15)}
+#mapwrap{position:relative;flex:1;display:flex;min-height:0}
+@media (max-width:820px){#mapwrap{flex:none;height:46vh}}
+#map{width:100%}
+.hidden{display:none!important}
+.src{font-size:12px;color:var(--mute);margin-top:4px}
+</style>
+</head>
+<body>
+<div id="app">
+<header>
+  <h1>☀ Repérage soleil <span>bâtiments et arbres · données IGN</span></h1>
+  <input id="search" type="search" placeholder="Adresse, lieu ou coordonnées GPS…" autocomplete="off">
+  <ul id="sugg"></ul>
+</header>
+<div id="main">
+  <div id="mapwrap"><div id="map"></div><button class="lbtn" id="layerBtn">Photo aérienne</button></div>
+  <div id="panel">
+    <div class="card">
+      <div class="seg" id="modeSeg">
+        <button data-m="point" class="on">☀ Point au soleil</button>
+        <button data-m="facade">🏛 Façade éclairée</button>
+      </div>
+      <div class="hint" id="howto"></div>
+      <div class="row">
+        <label>Date<input type="date" id="date"></label>
+        <label id="hLabel">Hauteur (m)<input type="number" id="height" min="0" max="80" step="0.5" value="1.7"></label>
+        <button class="btn" id="goBtn" disabled>Calculer</button>
+      </div>
+      <div id="status"></div>
+      <div class="notice" id="snapNotice"></div>
+    </div>
+
+    <div id="results" class="hidden">
+      <div class="card">
+        <div class="big" id="sumTitle"></div>
+        <div id="sumText"></div>
+        <ul class="slots" id="slotList"></ul>
+        <div class="src" id="srcInfo"></div>
+      </div>
+
+      <div class="card">
+        <h2>Journée heure par heure</h2>
+        <canvas id="dayCv" height="70"></canvas>
+        <input type="range" id="tSlider" min="0" max="1435" step="5">
+        <div id="tinfo"></div>
+        <label style="font-size:13px;display:flex;gap:6px;align-items:center;margin-top:4px"><input type="checkbox" id="shadowChk" checked> Afficher les ombres sur la carte à cette heure</label>
+      </div>
+
+      <div class="card">
+        <h2>Ciel vu depuis le point</h2>
+        <canvas id="polarCv"></canvas>
+        <div class="legend">
+          <span><i class="dot" style="background:#9aa3b5"></i>obstacles (bâtiments, arbres)</span>
+          <span><i class="dot" style="background:var(--acc)"></i>soleil à la date choisie</span>
+          <span><i class="dot" style="background:#d9a400"></i>21 juin</span>
+          <span><i class="dot" style="background:var(--acc2)"></i>21 décembre</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 id="yearTitle">Toute l'année</h2>
+        <canvas id="yearCv"></canvas>
+        <div class="legend" id="yearLegend"></div>
+        <div id="ginfo">Touchez le calendrier pour lire une case.</div>
+      </div>
+
+      <div class="card">
+        <h2 id="monthTitle">Mois par mois (le 15 de chaque mois)</h2>
+        <table class="months" id="monthTbl"></table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Mes lieux</h2>
+      <div class="row" style="margin-top:0">
+        <button class="btn ghost" id="saveFav" disabled>★ Enregistrer ce lieu</button>
+        <button class="btn ghost" id="copyLink" disabled>Copier le lien</button>
+      </div>
+      <div class="favs" id="favList"></div>
+      <div class="hint" id="favHint">Les lieux sont gardés dans ce navigateur (téléphone et ordinateur séparés). Le lien copié permet de rouvrir le même calcul ailleurs.</div>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary>Comment ça marche, et les limites</summary>
+        <p>Le relief vient de l'IGN : le <b>LiDAR HD</b> là où il est publié, sinon le <b>modèle de surface issu des photos aériennes</b>. Il contient les bâtiments et les arbres, avec un point tous les 50 cm près du point, puis tous les mètres jusqu'à 400 m.</p>
+        <p>Pour chaque direction, l'outil mesure la hauteur des obstacles vus depuis le point, puis compare avec la position exacte du soleil, heure de Paris, changement d'heure compris.</p>
+        <p><b>Limites :</b> les arbres sont tels qu'au jour du survol (feuillage selon la saison du vol) ; auvents, mobilier urbain et véhicules sont approximatifs ; le ciel nuageux n'est pas pris en compte ; zones militaires ou sensibles parfois vides.</p>
+        <p><b>Façade :</b> « de face » = le soleil frappe la façade avec un angle de moins de 60° par rapport à la perpendiculaire ; « rasant » = entre 60° et 85°, lumière qui sculpte les reliefs.</p>
+        <p>Données : IGN Géoplateforme, Licence Ouverte Etalab 2.0.</p>
+      </details>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+// ===== Moteur de calcul : soleil, horizon, créneaux =====
+// Aucune dépendance. Utilisable dans le navigateur et dans Node (tests).
+(function (root) {
+  'use strict';
+  const RAD = Math.PI / 180, DEG = 180 / Math.PI;
+
+  // --- Position du soleil (algorithme NOAA, précision ~0,01°) ---
+  // t : instant en millisecondes UTC. Renvoie azimut (0 = nord, sens horaire) et hauteur (avec réfraction), en degrés.
+  function solarPosition(t, lat, lon) {
+    const jd = t / 86400000 + 2440587.5;
+    const T = (jd - 2451545) / 36525;
+    const L0 = (280.46646 + T * (36000.76983 + T * 0.0003032)) % 360;
+    const M = 357.52911 + T * (35999.05029 - 0.0001537 * T);
+    const e = 0.016708634 - T * (0.000042037 + 0.0000001267 * T);
+    const Mr = M * RAD;
+    const C = Math.sin(Mr) * (1.914602 - T * (0.004817 + 0.000014 * T)) +
+      Math.sin(2 * Mr) * (0.019993 - 0.000101 * T) + Math.sin(3 * Mr) * 0.000289;
+    const trueLong = L0 + C;
+    const omega = 125.04 - 1934.136 * T;
+    const lambda = trueLong - 0.00569 - 0.00478 * Math.sin(omega * RAD);
+    const eps0 = 23 + (26 + (21.448 - T * (46.815 + T * (0.00059 - T * 0.001813))) / 60) / 60;
+    const eps = eps0 + 0.00256 * Math.cos(omega * RAD);
+    const decl = Math.asin(Math.sin(eps * RAD) * Math.sin(lambda * RAD));
+    const y = Math.tan(eps * RAD / 2) ** 2;
+    const L0r = L0 * RAD;
+    const eqTime = 4 * DEG * (y * Math.sin(2 * L0r) - 2 * e * Math.sin(Mr) + 4 * e * y * Math.sin(Mr) * Math.cos(2 * L0r)
+      - 0.5 * y * y * Math.sin(4 * L0r) - 1.25 * e * e * Math.sin(2 * Mr)); // minutes
+    const dayMin = ((t / 60000) % 1440 + 1440) % 1440;
+    let tst = (dayMin + eqTime + 4 * lon) % 1440;
+    if (tst < 0) tst += 1440;
+    let ha = tst / 4 - 180;
+    const latr = lat * RAD, har = ha * RAD;
+    const cosZ = Math.sin(latr) * Math.sin(decl) + Math.cos(latr) * Math.cos(decl) * Math.cos(har);
+    const zen = Math.acos(Math.max(-1, Math.min(1, cosZ)));
+    let el = 90 - zen * DEG;
+    // azimut
+    const az = (Math.atan2(Math.sin(har), Math.cos(har) * Math.sin(latr) - Math.tan(decl) * Math.cos(latr)) * DEG + 180) % 360;
+    // réfraction atmosphérique
+    let refr = 0;
+    if (el <= 85) {
+      const te = Math.tan(el * RAD);
+      if (el > 5) refr = 58.1 / te - 0.07 / te ** 3 + 0.000086 / te ** 5;
+      else if (el > -0.575) refr = 1735 + el * (-518.2 + el * (103.4 + el * (-12.79 + el * 0.711)));
+      else refr = -20.774 / te;
+      refr /= 3600;
+    }
+    el += refr;
+    return { az, el };
+  }
+
+  // --- Heure de Paris -> instant UTC (gère l'heure d'été) ---
+  const fmt = (typeof Intl !== 'undefined') ? new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Paris', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  }) : null;
+  function parisOffsetMin(t) {
+    const p = {};
+    for (const x of fmt.formatToParts(new Date(t))) p[x.type] = x.value;
+    const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+    return Math.round((asUTC - Math.floor(t / 1000) * 1000) / 60000);
+  }
+  // minutes depuis minuit (heure de Paris) le jour y-m-d -> ms UTC
+  function parisToUTC(y, m, d, minutes) {
+    const guess = Date.UTC(y, m - 1, d, 0, 0) + minutes * 60000;
+    let t = guess - parisOffsetMin(guess) * 60000;
+    t = guess - parisOffsetMin(t) * 60000;
+    return t;
+  }
+
+  // --- Grilles d'altitude (projection Web Mercator EPSG:3857) ---
+  // grid = { data: Float32Array, w, h, x0 (gauche), y1 (haut), res (unités mercator / pixel), nodata }
+  function sample(g, x, y) {
+    const i = Math.floor((x - g.x0) / g.res), j = Math.floor((g.y1 - y) / g.res);
+    if (i < 0 || j < 0 || i >= g.w || j >= g.h) return NaN;
+    const v = g.data[j * g.w + i];
+    return v < -1000 ? NaN : v;
+  }
+  function sampleBilinear(g, x, y) {
+    const fx = (x - g.x0) / g.res - 0.5, fy = (g.y1 - y) / g.res - 0.5;
+    const i = Math.floor(fx), j = Math.floor(fy), dx = fx - i, dy = fy - j;
+    let s = 0, wsum = 0;
+    for (const [ii, jj, w] of [[i, j, (1 - dx) * (1 - dy)], [i + 1, j, dx * (1 - dy)], [i, j + 1, (1 - dx) * dy], [i + 1, j + 1, dx * dy]]) {
+      if (ii < 0 || jj < 0 || ii >= g.w || jj >= g.h) continue;
+      const v = g.data[jj * g.w + ii];
+      if (v < -1000) continue;
+      s += v * w; wsum += w;
+    }
+    return wsum > 0 ? s / wsum : NaN;
+  }
+  function nodataFraction(g) {
+    let n = 0;
+    for (let k = 0; k < g.data.length; k++) if (!(g.data[k] > -1000)) n++;
+    return n / g.data.length;
+  }
+
+  // --- Horizon : hauteur angulaire des obstacles dans chaque direction ---
+  // P = {x, y} en mercator, zEye = altitude de l'œil (m), k = facteur d'échelle mercator (1/cos lat)
+  // Renvoie Float32Array(720) : hauteur de l'horizon (degrés) tous les 0,5°.
+  const N_AZ = 720, MAX_D = 400;
+  function horizon(P, zEye, inner, outer, k, startD) {
+    const out = new Float32Array(N_AZ);
+    for (let a = 0; a < N_AZ; a++) {
+      const ang = a * 0.5 * RAD, sx = Math.sin(ang) * k, sy = Math.cos(ang) * k;
+      let best = -Infinity;
+      let d = startD;
+      while (d <= MAX_D) {
+        const fine = d < 100;
+        const x = P.x + sx * d, y = P.y + sy * d;
+        let z = fine ? sample(inner, x, y) : NaN; // grille fine (0,5 m) si disponible
+        if (z !== z) z = sample(outer, x, y);
+        if (z === z) {
+          const r = (z - zEye) / d;
+          if (r > best) best = r;
+        }
+        d += fine ? 0.25 : 0.5;
+      }
+      out[a] = best === -Infinity ? -90 : Math.atan(best) * DEG;
+    }
+    return out;
+  }
+  function horizonAt(hz, az) {
+    const f = ((az % 360) + 360) % 360 / 0.5, i = Math.floor(f), t = f - i;
+    return hz[i % N_AZ] * (1 - t) + hz[(i + 1) % N_AZ] * t;
+  }
+
+  // --- Éclairage d'un point à un instant ---
+  // normal (facultatif) : azimut de la normale de façade. Renvoie 0 nuit, 1 ombre, 2 soleil, 3 heure dorée au soleil,
+  // pour une façade : 1 ombre, 4 rasant (incidence 60-85°), 5 de face (incidence <= 60°)
+  const ST = { NUIT: 0, OMBRE: 1, SOLEIL: 2, DOREE: 3, RASANT: 4, FACE: 5 };
+  function lightState(sun, hz, normal) {
+    if (sun.el <= -0.3) return ST.NUIT;
+    const lit = sun.el > horizonAt(hz, sun.az);
+    if (normal == null) {
+      if (!lit) return ST.OMBRE;
+      return sun.el < 6 ? ST.DOREE : ST.SOLEIL;
+    }
+    const inc = incidence(sun, normal);
+    if (!lit || inc >= 85) return ST.OMBRE;
+    return inc <= 60 ? ST.FACE : ST.RASANT;
+  }
+  // angle entre le rayon du soleil et la normale d'une façade verticale
+  function incidence(sun, normal) {
+    const c = Math.cos(sun.el * RAD) * Math.cos((sun.az - normal) * RAD);
+    return Math.acos(Math.max(-1, Math.min(1, c))) * DEG;
+  }
+
+  // --- Journée : état minute par minute (pas de 2 min) ---
+  function dayTimeline(y, m, d, lat, lon, hz, normal, stepMin) {
+    stepMin = stepMin || 2;
+    const res = [];
+    for (let mi = 0; mi < 1440; mi += stepMin) {
+      const t = parisToUTC(y, m, d, mi);
+      const s = solarPosition(t, lat, lon);
+      res.push({ min: mi, az: s.az, el: s.el, st: lightState(s, hz, normal) });
+    }
+    return res;
+  }
+  // regroupe en segments consécutifs du même état
+  function segments(tl, stepMin) {
+    stepMin = stepMin || 2;
+    const segs = [];
+    for (const p of tl) {
+      const last = segs[segs.length - 1];
+      if (last && last.st === p.st) last.end = p.min + stepMin;
+      else segs.push({ st: p.st, start: p.min, end: p.min + stepMin });
+    }
+    return segs;
+  }
+
+  // --- Année : grille jours x heures ---
+  function yearGrid(year, lat, lon, hz, normal, dayStep, minStep, minStart, minEnd) {
+    const rows = [];
+    const t0 = Date.UTC(year, 0, 1);
+    for (let doy = 0; doy < 366; doy += dayStep) {
+      const dt = new Date(t0 + doy * 86400000);
+      if (dt.getUTCFullYear() !== year) break;
+      const y = dt.getUTCFullYear(), m = dt.getUTCMonth() + 1, d = dt.getUTCDate();
+      const cells = new Uint8Array(Math.floor((minEnd - minStart) / minStep));
+      for (let c = 0; c < cells.length; c++) {
+        const s = solarPosition(parisToUTC(y, m, d, minStart + c * minStep), lat, lon);
+        cells[c] = lightState(s, hz, normal);
+      }
+      rows.push({ y, m, d, cells });
+    }
+    return rows;
+  }
+
+  // --- Ombres portées sur une grille (pour l'affichage carte) ---
+  // renvoie Uint8Array (1 = ombre) de même taille que la grille
+  function shadowMask(g, sun, k) {
+    const out = new Uint8Array(g.w * g.h);
+    if (sun.el <= 0) { out.fill(1); return out; }
+    const tanEl = Math.tan(sun.el * RAD);
+    const resM = g.res / k; // mètres par pixel
+    const dx = Math.sin(sun.az * RAD), dy = -Math.cos(sun.az * RAD); // vers le soleil (lignes vers le sud)
+    let zmin = Infinity, zmax = -Infinity;
+    for (const v of g.data) { if (v > -1000) { if (v < zmin) zmin = v; if (v > zmax) zmax = v; } }
+    const maxSteps = Math.min(1200, Math.ceil((zmax - zmin) / (tanEl * resM)) + 1);
+    const W = g.w, H = g.h, z = g.data;
+    for (let j = 0; j < H; j++) {
+      for (let i = 0; i < W; i++) {
+        const z0 = z[j * W + i];
+        if (!(z0 > -1000)) continue;
+        for (let s = 1; s <= maxSteps; s++) {
+          const ii = Math.round(i + dx * s), jj = Math.round(j + dy * s);
+          if (ii < 0 || jj < 0 || ii >= W || jj >= H) break;
+          const rise = s * resM * tanEl;
+          if (z0 + rise > zmax) break;
+          if (z[jj * W + ii] > z0 + rise + 0.3) { out[j * W + i] = 1; break; }
+        }
+      }
+    }
+    return out;
+  }
+
+  // --- Mercator ---
+  const R = 6378137;
+  function toMerc(lat, lon) {
+    return { x: R * lon * RAD, y: R * Math.log(Math.tan(Math.PI / 4 + lat * RAD / 2)) };
+  }
+  function fromMerc(x, y) {
+    return { lat: (2 * Math.atan(Math.exp(y / R)) - Math.PI / 2) * DEG, lon: x / R * DEG };
+  }
+
+  const api = { solarPosition, parisToUTC, parisOffsetMin, sample, sampleBilinear, nodataFraction, horizon, horizonAt,
+    lightState, incidence, dayTimeline, segments, yearGrid, shadowMask, toMerc, fromMerc, ST, N_AZ, MAX_D };
+  if (typeof module !== 'undefined') module.exports = api; else root.Core = api;
+})(this);
+
+</script>
+<script>
+(function(){
+'use strict';
+const $ = s => document.querySelector(s);
+const C = window.Core, ST = C.ST;
+const GEOPF = 'https://data.geopf.fr';
+const LAYERS = {
+  lidar: {mns:'IGNF_LIDAR-HD_MNS_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93', mnt:'IGNF_LIDAR-HD_MNT_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93', label:'LiDAR HD (IGN)'},
+  photo: {mns:'ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES.MNS', mnt:'ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES', label:'modèle de surface issu des photos aériennes (IGN)'}
+};
+const COLORS = {0:'#1d2433',1:'#7d8bab',2:'#f2c14e',3:'#ee8a2a',4:'#f7e3a1',5:'#e9701b'};
+const STATE_TXT = {0:'nuit',1:'à l\'ombre',2:'au soleil',3:'au soleil, lumière dorée',4:'éclairée en lumière rasante',5:'éclairée de face'};
+const MONTHS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+const MON3 = ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+
+// ---------- état ----------
+const S = {
+  mode:'point', obs:null, fac:null, area:null, res:null, snap:null,
+  inBuilding:false, loadingId:0
+};
+
+// ---------- carte ----------
+const map = L.map('map', {zoomControl:true, attributionControl:true}).setView([50.6365, 3.0635], 16);
+const wmts = (layer, fmt) => GEOPF + '/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=' + layer +
+  '&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=' + fmt;
+const planLayer = L.tileLayer(wmts('GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2','image/png'), {maxZoom:21, maxNativeZoom:19, attribution:'© IGN'});
+const orthoLayer = L.tileLayer(wmts('ORTHOIMAGERY.ORTHOPHOTOS','image/jpeg'), {maxZoom:21, maxNativeZoom:19, attribution:'© IGN'});
+planLayer.addTo(map);
+setTimeout(() => map.invalidateSize(), 200);
+window.addEventListener('load', () => map.invalidateSize());
+let ortho = false;
+$('#layerBtn').onclick = () => {
+  ortho = !ortho;
+  if (ortho) { map.removeLayer(planLayer); orthoLayer.addTo(map); $('#layerBtn').textContent = 'Plan'; }
+  else { map.removeLayer(orthoLayer); planLayer.addTo(map); $('#layerBtn').textContent = 'Photo aérienne'; }
+};
+const icon = (bg, txt) => L.divIcon({className:'', iconSize:[30,30], iconAnchor:[15,15],
+  html:'<div style="width:30px;height:30px;border-radius:50%;background:'+bg+';border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.4);color:#fff;font:700 14px/24px system-ui;text-align:center">'+txt+'</div>'});
+const obsMarker = L.marker([0,0], {draggable:true, icon:icon('#e07a1f','●')});
+const facMarker = L.marker([0,0], {draggable:true, icon:icon('#2f5bd3','F')});
+let areaRect = null, shadowOverlay = null, normalLine = null, facPointMarker = null;
+
+obsMarker.on('dragend', () => { const p = obsMarker.getLatLng(); setObs(p.lat, p.lng, {fromDrag:true}); });
+facMarker.on('dragend', () => { const p = facMarker.getLatLng(); setFac(p.lat, p.lng); });
+map.on('click', e => {
+  if (S.mode === 'facade' && S.obs) setFac(e.latlng.lat, e.latlng.lng);
+  else setObs(e.latlng.lat, e.latlng.lng, {});
+});
+
+// ---------- mode ----------
+function setMode(m) {
+  S.mode = m;
+  document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
+  const h = $('#height');
+  if (m === 'point') {
+    $('#hLabel').firstChild.textContent = 'Hauteur du point (m)';
+    if (h.dataset.touched !== '1') h.value = 1.7;
+    if (S.fac) { map.removeLayer(facMarker); }
+  } else {
+    $('#hLabel').firstChild.textContent = 'Hauteur sur la façade (m)';
+    if (h.dataset.touched !== '1') h.value = 3;
+    if (S.fac) facMarker.addTo(map);
+  }
+  updateHowto(); updateGo(); clearResults();
+}
+document.querySelectorAll('#modeSeg button').forEach(b => b.onclick = () => setMode(b.dataset.m));
+$('#height').addEventListener('input', e => e.target.dataset.touched = '1');
+function updateHowto() {
+  $('#howto').innerHTML = S.mode === 'point'
+    ? 'Touchez la carte (ou cherchez une adresse) pour placer le point où vous serez, ou votre sujet. Le repère se déplace au doigt.'
+    : '1. Placez-vous dans la rue (repère orange). 2. Touchez la façade à photographier (repère bleu F).<br>Astuce : cherchez l\'adresse du bâtiment, l\'outil place les deux repères.';
+}
+function updateGo() {
+  const ok = S.mode === 'point' ? !!S.obs : !!(S.obs && S.fac);
+  $('#goBtn').disabled = !ok;
+  $('#saveFav').disabled = !S.obs; $('#copyLink').disabled = !S.obs;
+}
+
+// ---------- date ----------
+function todayParis() {
+  const p = {};
+  for (const x of new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date())) p[x.type]=x.value;
+  return p.year+'-'+p.month+'-'+p.day;
+}
+$('#date').value = todayParis();
+$('#date').addEventListener('change', () => { if (S.res) compute(); });
+$('#height').addEventListener('change', () => { if (S.res) compute(); });
+$('#goBtn').onclick = () => compute();
+
+// ---------- statut ----------
+function status(msg, err) { const s = $('#status'); s.textContent = msg || ''; s.className = err ? 'err' : ''; }
+function notice(html) { const n = $('#snapNotice'); if (!html) { n.style.display='none'; n.innerHTML=''; return; } n.innerHTML = html; n.style.display = 'block'; }
+
+// ---------- lecture GeoTIFF (non compressé, float32) ----------
+function parseTiff(buf) {
+  const dv = new DataView(buf);
+  const b0 = dv.getUint8(0);
+  if (b0 === 0x3c) throw new Error('réponse IGN inattendue : ' + new TextDecoder().decode(new Uint8Array(buf, 0, Math.min(300, buf.byteLength))).replace(/<[^>]+>/g,' ').trim().slice(0,160));
+  const le = b0 === 0x49;
+  const u16 = o => dv.getUint16(o, le), u32 = o => dv.getUint32(o, le);
+  if (u16(2) !== 42) throw new Error('fichier TIFF non reconnu');
+  const ifd = u32(4), n = u16(ifd), tags = {};
+  for (let i = 0; i < n; i++) {
+    const e = ifd + 2 + i*12, tag = u16(e), type = u16(e+2), cnt = u32(e+4);
+    const size = {1:1,2:1,3:2,4:4,5:8,11:4,12:8,16:8}[type] || 1;
+    const off = cnt*size <= 4 ? e+8 : u32(e+8);
+    const vals = [];
+    for (let k = 0; k < cnt; k++) vals.push(type === 3 ? u16(off+k*2) : type === 4 ? u32(off+k*4) : dv.getUint8(off+k));
+    tags[tag] = vals;
+  }
+  const w = tags[256][0], h = tags[257][0];
+  if ((tags[259]||[1])[0] !== 1) throw new Error('compression TIFF non gérée');
+  if ((tags[258]||[32])[0] !== 32) throw new Error('format de pixel non géré');
+  const out = new Float32Array(w*h);
+  const readF = (off, idx, count) => { for (let k = 0; k < count; k++) out[idx+k] = dv.getFloat32(off + k*4, le); };
+  if (tags[273]) { // bandes
+    const offs = tags[273], rps = (tags[278]||[h])[0];
+    for (let s = 0; s < offs.length; s++) {
+      const rows = Math.min(rps, h - s*rps);
+      readF(offs[s], s*rps*w, rows*w);
+    }
+  } else if (tags[324]) { // tuiles
+    const tw = tags[322][0], th = tags[323][0], offs = tags[324], across = Math.ceil(w/tw);
+    for (let t = 0; t < offs.length; t++) {
+      const tx = (t % across)*tw, ty = Math.floor(t/across)*th;
+      for (let r = 0; r < th && ty+r < h; r++)
+        for (let c = 0; c < tw && tx+c < w; c++)
+          out[(ty+r)*w + tx+c] = dv.getFloat32(offs[t] + (r*tw+c)*4, le);
+    }
+  } else throw new Error('structure TIFF non gérée');
+  return {data:out, w, h};
+}
+
+async function fetchGrid(layer, P, halfM, px, k) {
+  const hm = halfM * k;
+  const x0 = P.x - hm, y0 = P.y - hm, x1 = P.x + hm, y1 = P.y + hm;
+  const url = GEOPF + '/wms-r?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&FORMAT=image/geotiff&STYLES=&CRS=EPSG:3857' +
+    '&LAYERS=' + layer + '&BBOX=' + [x0,y0,x1,y1].map(v=>v.toFixed(2)).join(',') + '&WIDTH=' + px + '&HEIGHT=' + px;
+  let t, lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise(res => setTimeout(res, 1200*attempt));
+    try {
+      const r = await fetch(url);
+      if (!r.ok) { lastErr = new Error('serveur IGN : erreur ' + r.status); continue; }
+      t = parseTiff(await r.arrayBuffer()); break;
+    } catch (e) { lastErr = e.message && e.message.startsWith('réponse') ? e : new Error('pas de connexion au serveur IGN'); }
+  }
+  if (!t) throw lastErr;
+  return {data:t.data, w:t.w, h:t.h, x0, y1, res:(x1-x0)/t.w};
+}
+
+async function hasLidar(lat, lon) {
+  const d = 0.0045;
+  const url = GEOPF + '/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=IGNF_LIDAR-HD_METADONNEE:metadata' +
+    '&BBOX=' + [lat-d, lon-d*1.6, lat+d, lon+d*1.6].map(v=>v.toFixed(5)).join(',') + ',urn:ogc:def:crs:EPSG::4326&COUNT=20&OUTPUTFORMAT=application/json&PROPERTYNAME=geom';
+  try { const r = await fetch(url); const j = await r.json(); return (j.numberMatched || 0) > 0; }
+  catch (e) { return false; }
+}
+
+// Charge le relief autour d'un point (200 m fins à 0,5 m, 800 m à 1 m, sol à 1 m)
+async function loadArea(lat, lon) {
+  const P = C.toMerc(lat, lon), k = 1/Math.cos(lat*Math.PI/180);
+  status('Recherche des données IGN…');
+  let src = (await hasLidar(lat, lon)) ? 'lidar' : 'photo';
+  let note = '';
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const L_ = LAYERS[src];
+    status('Téléchargement du relief (' + (src === 'lidar' ? 'LiDAR HD' : 'modèle photo') + ', environ 3,5 Mo)…');
+    const [inner, outer, mnt] = await Promise.all([
+      fetchGrid(L_.mns, P, 100, 400, k), fetchGrid(L_.mns, P, 400, 800, k), fetchGrid(L_.mnt, P, 100, 200, k)]);
+    const nd = C.nodataFraction(outer);
+    if (src === 'lidar' && nd > 0.01) { src = 'photo'; note = 'LiDAR incomplet ici, modèle photo utilisé. '; continue; }
+    if (nd > 0.01) note += 'Attention : ' + Math.round(nd*100) + ' % de la zone sans données (zone sensible ou bord de couverture). ';
+    return {P, k, lat, lon, inner, outer, mnt, src, note};
+  }
+}
+
+function groundAt(A, x, y) {
+  let g = C.sampleBilinear(A.mnt, x, y);
+  if (!(g === g)) g = C.sample(A.outer, x, y);
+  return g;
+}
+function zAt(A, x, y) { const z = C.sample(A.inner, x, y); return z === z ? z : C.sample(A.outer, x, y); }
+function distM(A, a, b) { return Math.hypot(a.x-b.x, a.y-b.y) / A.k; }
+
+// point dégagé le plus proche (relief < 0,8 m au-dessus du sol), dans un rayon de 35 m
+function nearestOpen(A, P) {
+  const g = A.inner, k = A.k;
+  const ci = Math.floor((P.x - g.x0)/g.res), cj = Math.floor((g.y1 - P.y)/g.res);
+  const rpx = Math.ceil(45*k/g.res);
+  let best = null, bd = Infinity;
+  for (let j = Math.max(0,cj-rpx); j <= Math.min(g.h-1,cj+rpx); j++)
+    for (let i = Math.max(0,ci-rpx); i <= Math.min(g.w-1,ci+rpx); i++) {
+      const d2 = (i-ci)**2 + (j-cj)**2;
+      if (d2 >= bd || d2 > rpx*rpx) continue;
+      const x = g.x0 + (i+0.5)*g.res, y = g.y1 - (j+0.5)*g.res;
+      const z = g.data[j*g.w+i], gr = groundAt(A, x, y);
+      // on exige un espace dégagé d'environ 3 m de rayon (trottoir, chaussée), pas un simple interstice
+      let ok = z - gr < 0.8;
+      const rr = Math.ceil(3*k/g.res);
+      for (let dj = -rr; ok && dj <= rr; dj += 2) for (let di = -rr; ok && di <= rr; di += 2) {
+        if (di*di + dj*dj > rr*rr) continue;
+        const jj = j+dj, ii = i+di; if (jj<0||ii<0||jj>=g.h||ii>=g.w) continue;
+        if (g.data[jj*g.w+ii] - gr > 0.8) ok = false;
+      }
+      if (ok) { bd = d2; best = {x, y}; }
+    }
+  return best;
+}
+
+// ---------- placement des repères ----------
+async function setObs(lat, lon, opt) {
+  opt = opt || {};
+  S.obs = {lat, lon}; S.adj = 0;
+  obsMarker.setLatLng([lat, lon]).addTo(map);
+  notice(null); updateGo(); clearResults();
+  const id = ++S.loadingId;
+  const P = C.toMerc(lat, lon);
+  try {
+    if (!S.area || distM(S.area, S.area.P, P) > 70) {
+      const A = await loadArea(lat, lon);
+      if (id !== S.loadingId) return;
+      S.area = A; drawArea();
+    }
+    if (id !== S.loadingId) return;
+    const A = S.area;
+    const z = zAt(A, P.x, P.y), g = groundAt(A, P.x, P.y);
+    S.inBuilding = (z - g) > 1.5;
+    status('Prêt. Source : ' + LAYERS[A.src].label + '. ' + A.note);
+    if (S.inBuilding) {
+      const q = nearestOpen(A, P);
+      if (opt.autoSnap && q) {
+        const ll = C.fromMerc(q.x, q.y), dm = Math.round(distM(A, P, q));
+        if (opt.facadeTarget) { // l'adresse devient la façade, l'observateur va dans la rue
+          S.obs = {lat:ll.lat, lon:ll.lon}; obsMarker.setLatLng([ll.lat, ll.lon]);
+          setFac(lat, lon, true);
+          notice('Le repère orange a été placé dans la rue la plus proche (' + dm + ' m). Si ce n\'est pas le bon côté du bâtiment, faites-le glisser devant la façade voulue.');
+          updateGo(); return compute();
+        }
+        S.obs = {lat:ll.lat, lon:ll.lon}; obsMarker.setLatLng([ll.lat, ll.lon]); S.inBuilding = false;
+        notice('L\'adresse tombait sur le bâtiment : le repère a été déplacé de ' + dm + ' m vers l\'espace ouvert le plus proche. Faites-le glisser pour ajuster.');
+        updateGo(); return compute();
+      }
+      const h = Math.round(z - g);
+      notice('Ce point est sur un toit ou sous un arbre (' + h + ' m au-dessus du sol). ' +
+        (q ? '<br><button class="btn" id="snapBtn">Déplacer sur la rue la plus proche</button>' : ''));
+      if (q) $('#snapBtn').onclick = () => { const ll = C.fromMerc(q.x, q.y); setObs(ll.lat, ll.lon, {}); };
+    }
+    if (S.mode === 'point' || S.fac) compute();
+  } catch (e) {
+    if (id === S.loadingId) status('Impossible de charger les données : ' + e.message, true);
+  }
+}
+function setFac(lat, lon, silent) {
+  S.fac = {lat, lon}; S.adj = 0;
+  facMarker.setLatLng([lat, lon]).addTo(map);
+  updateGo();
+  if (!silent && S.area) compute();
+}
+function drawArea() {
+  const A = S.area, g = A.outer;
+  const sw = C.fromMerc(g.x0, g.y1 - g.h*g.res), ne = C.fromMerc(g.x0 + g.w*g.res, g.y1);
+  if (areaRect) map.removeLayer(areaRect);
+  areaRect = L.rectangle([[sw.lat, sw.lon],[ne.lat, ne.lon]], {color:'#e07a1f', weight:1, dashArray:'4 4', fill:false, interactive:false}).addTo(map);
+}
+
+// ---------- façade : trouver le mur et son orientation ----------
+// Rayons parallèles (tous les 1,5 m sur ±6 m) depuis la rue vers la façade : on ajuste une droite sur les points de mur trouvés.
+function wallHit(A, ox, oy, ux, uy, maxS) {
+  const k = A.k;
+  for (let s = 0.5; s < maxS; s += 0.25) {
+    const x = ox + ux*s*k, y = oy + uy*s*k;
+    const z = zAt(A, x, y);
+    if (!(z === z)) return null;
+    if (z - groundAt(A, x, y) > 2.5) return {x, y, s};
+  }
+  return null;
+}
+function findFacade(A, O, T) {
+  const k = A.k;
+  const gO = groundAt(A, O.x, O.y);
+  const dx = (T.x - O.x)/k, dy = (T.y - O.y)/k, L0 = Math.hypot(dx, dy);
+  if (L0 < 0.5) return null;
+  const ux = dx/L0, uy = dy/L0, px = -uy, py = ux; // perpendiculaire
+  const wall = wallHit(A, O.x, O.y, ux, uy, L0 + 25);
+  if (!wall) return null;
+  const pts = [];
+  for (let off = -6; off <= 6.01; off += 1.5) {
+    const h = wallHit(A, O.x + px*off*k, O.y + py*off*k, ux, uy, L0 + 25);
+    if (h && Math.abs(h.s - wall.s) < 6) pts.push({x:(h.x - wall.x)/k, y:(h.y - wall.y)/k}); // en mètres, relatif
+  }
+  let nx, ny, method = 'droite';
+  if (pts.length >= 4) {
+    let mx = 0, my = 0; pts.forEach(p => { mx += p.x; my += p.y; }); mx /= pts.length; my /= pts.length;
+    let sxx = 0, sxy = 0, syy = 0; pts.forEach(p => { const a = p.x - mx, b = p.y - my; sxx += a*a; sxy += a*b; syy += b*b; });
+    const th = 0.5*Math.atan2(2*sxy, sxx - syy); // direction du mur
+    nx = -Math.sin(th); ny = Math.cos(th);
+    if (nx*(-ux) + ny*(-uy) < 0) { nx = -nx; ny = -ny; } // normale tournée vers la rue
+    if (nx*(-ux) + ny*(-uy) < 0.26) method = null;     // incohérent (angle de bâtiment…)
+  } else method = null;
+  if (!method) { nx = -ux; ny = -uy; }
+  const normalAz = (Math.atan2(nx, ny)*180/Math.PI + 360) % 360;
+  const F = {x: wall.x + nx*1.0*k, y: wall.y + ny*1.0*k};
+  return {wall, F, normalAz, fromGrad: !!method, gO, nPts: pts.length};
+}
+
+// ---------- calcul ----------
+function parseDate() { const [y,m,d] = $('#date').value.split('-').map(Number); return {y,m,d}; }
+let lastCompute = null;
+function compute() {
+  if (!S.area || !S.obs) return;
+  const A = S.area, D = parseDate();
+  if (!D.y) return;
+  const h = Math.max(0, parseFloat($('#height').value) || 0);
+  const O = C.toMerc(S.obs.lat, S.obs.lon);
+  if (distM(A, A.P, O) > 70) { setObs(S.obs.lat, S.obs.lon, {}); return; }
+  let P, zEye, normal = null, fac = null;
+  if (S.mode === 'point') {
+    P = O; zEye = groundAt(A, O.x, O.y) + h;
+    if (S.inBuilding) zEye = zAt(A, O.x, O.y) + Math.max(h, 0.3); // sur un toit : on part du toit
+  } else {
+    if (!S.fac) { status('Touchez maintenant la façade à photographier.'); return; }
+    const T = C.toMerc(S.fac.lat, S.fac.lon);
+    if (distM(A, O, T) > 90) { status('La façade doit être à moins de 90 m du repère orange.', true); return; }
+    fac = findFacade(A, O, T);
+    if (!fac) { status('Aucune façade trouvée entre les deux repères. Touchez directement le bâtiment, et placez le repère orange dans la rue en face.', true); return; }
+    normal = (fac.normalAz + (S.adj || 0) + 360) % 360;
+    // point 1 m devant le mur, le long de la normale corrigée
+    P = {x: fac.wall.x + Math.sin(normal*Math.PI/180)*A.k, y: fac.wall.y + Math.cos(normal*Math.PI/180)*A.k};
+    zEye = groundAt(A, P.x, P.y) + h;
+  }
+  status('Calcul…');
+  const hz = C.horizon(P, zEye, A.inner, A.outer, A.k, 1.0);
+  const ll = C.fromMerc(P.x, P.y);
+  const tl = C.dayTimeline(D.y, D.m, D.d, ll.lat, ll.lon, hz, normal, 2);
+  const yg = C.yearGrid(D.y, ll.lat, ll.lon, hz, normal, 2, 10, 240, 1350);
+  S.res = {P, ll, zEye, hz, normal, fac, tl, yg, D};
+  status('Source : ' + LAYERS[A.src].label + '. ' + A.note);
+  drawFacadeOnMap();
+  showResults();
+}
+
+function clearResults() {
+  S.res = null; $('#results').classList.add('hidden');
+  if (shadowOverlay) { map.removeLayer(shadowOverlay); shadowOverlay = null; }
+  if (normalLine) { map.removeLayer(normalLine); normalLine = null; }
+  if (facPointMarker) { map.removeLayer(facPointMarker); facPointMarker = null; }
+}
+function drawFacadeOnMap() {
+  if (normalLine) { map.removeLayer(normalLine); normalLine = null; }
+  if (facPointMarker) { map.removeLayer(facPointMarker); facPointMarker = null; }
+  const R = S.res; if (!R.fac) return;
+  const k = S.area.k, w = R.fac.wall;
+  const a = C.fromMerc(w.x, w.y), b = C.fromMerc(w.x + Math.sin(R.normal*Math.PI/180)*12*k, w.y + Math.cos(R.normal*Math.PI/180)*12*k);
+  normalLine = L.polyline([[a.lat,a.lon],[b.lat,b.lon]], {color:'#2f5bd3', weight:4, interactive:false}).addTo(map);
+  facPointMarker = L.circleMarker([R.ll.lat, R.ll.lon], {radius:5, color:'#fff', weight:2, fillColor:'#2f5bd3', fillOpacity:1, interactive:false}).addTo(map);
+}
+
+// ---------- affichage ----------
+const hm = m => { m = Math.round(m); return Math.floor(m/60) + 'h' + String(m%60).padStart(2,'0'); };
+const dir8 = az => ['N','NE','E','SE','S','SO','O','NO'][Math.round(az/45) % 8];
+const dirTxt = az => ({N:'nord',NE:'nord-est',E:'est',SE:'sud-est',S:'sud',SO:'sud-ouest',O:'ouest',NO:'nord-ouest'})[dir8(az)];
+const isLit = st => st === ST.SOLEIL || st === ST.DOREE || st === ST.FACE || st === ST.RASANT;
+
+function showResults() {
+  const R = S.res, D = R.D, facMode = R.normal != null;
+  $('#results').classList.remove('hidden');
+  const dateTxt = D.d + ' ' + MONTHS[D.m-1] + ' ' + D.y;
+  const segs = C.segments(R.tl, 2);
+  const lit = segs.filter(s => isLit(s.st));
+  // lever / coucher
+  const day = R.tl.filter(p => p.el > -0.3);
+  const rise = day.length ? day[0].min : null, set = day.length ? day[day.length-1].min + 2 : null;
+  // fusion des segments éclairés contigus
+  const merged = [];
+  for (const s of segs) {
+    if (!isLit(s.st)) continue;
+    const last = merged[merged.length-1];
+    if (last && last.end === s.start) { last.end = s.end; last.parts.push(s); } else merged.push({start:s.start, end:s.end, parts:[s]});
+  }
+  const total = merged.reduce((a,s) => a + s.end - s.start, 0);
+  if (facMode) {
+    $('#sumTitle').textContent = 'Façade orientée ' + dirTxt(R.normal) + ' (' + Math.round(R.normal) + '°) — ' + dateTxt;
+  } else {
+    $('#sumTitle').textContent = (merged.length ? 'Au soleil ' + (total >= 60 ? Math.floor(total/60) + ' h ' + String(total%60).padStart(2,'0') : total + ' min') : 'Pas de soleil direct') + ' — ' + dateTxt;
+  }
+  let txt = rise != null ? 'Lever du soleil ' + hm(rise) + ', coucher ' + hm(set) + '. ' : 'Soleil sous l\'horizon toute la journée. ';
+  if (facMode) {
+    const face = segs.filter(s => s.st === ST.FACE).reduce((a,s)=>a+s.end-s.start,0);
+    txt += merged.length ? 'Façade éclairée ' + Math.round(total) + ' min, dont ' + face + ' min de face.' : 'La façade ne reçoit pas de soleil direct ce jour-là.';
+    if (!R.fac.fromGrad) txt += ' (Orientation estimée d\'après la position du repère orange : vérifiez la flèche bleue sur la carte.)';
+    setTimeout(() => {
+      const box = document.createElement('div'); box.className = 'row'; box.style.alignItems = 'center';
+      box.innerHTML = '<span style="font-size:13px;color:var(--mute)">La flèche bleue n\'est pas perpendiculaire au mur ? Corriger :</span>' +
+        '<button class="chip" data-a="-5">↺ 5°</button><button class="chip" data-a="5">↻ 5°</button>' + (S.adj ? '<span style="font-size:12px;color:var(--mute)">(' + (S.adj > 0 ? '+' : '') + S.adj + '°)</span>' : '');
+      box.querySelectorAll('button').forEach(b => b.onclick = () => { S.adj = (S.adj || 0) + (+b.dataset.a); compute(); });
+      $('#sumText').appendChild(box);
+    }, 0);
+  } else if (!merged.length) txt += 'Le point reste à l\'ombre des bâtiments ou des arbres.';
+  $('#sumText').textContent = txt;
+  const ul = $('#slotList'); ul.innerHTML = '';
+  for (const s of merged) {
+    const li = document.createElement('li');
+    const det = s.parts.length > 1 || facMode ? ' <span style="color:var(--mute);font-size:13px">(' + s.parts.map(p => (facMode ? (p.st===ST.FACE?'de face ':'rasant ') : (p.st===ST.DOREE?'dorée ':'')) + hm(p.start) + '–' + hm(p.end)).join(', ') + ')</span>' : (s.parts[0].st === ST.DOREE ? ' <span style="color:var(--mute);font-size:13px">(lumière dorée)</span>' : '');
+    li.innerHTML = '<i class="dot" style="background:' + COLORS[facMode ? ST.FACE : ST.SOLEIL] + '"></i><b>' + hm(s.start) + ' → ' + hm(s.end) + '</b>' + det;
+    ul.appendChild(li);
+  }
+  const A = S.area;
+  $('#srcInfo').textContent = 'Relief : ' + LAYERS[A.src].label + '. Point calculé à ' + (R.zEye - groundAt(A, R.P.x, R.P.y)).toFixed(1) + ' m du sol' +
+    (facMode ? ', 1 m devant la façade.' : '.');
+  // curseur horaire
+  const sl = $('#tSlider');
+  const nowMin = (() => { if ($('#date').value !== todayParis()) return null;
+    const p = {}; for (const x of new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Paris',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date())) p[x.type]=x.value; return +p.hour*60 + +p.minute; })();
+  let t0 = nowMin != null && rise != null && nowMin > rise && nowMin < set ? nowMin : (merged.length ? Math.round((merged[0].start + merged[0].end)/2) : 720);
+  sl.value = Math.round(t0/5)*5;
+  drawDay(); drawPolar(); drawYear(); fillMonths(); updateTime(true);
+}
+
+function setupCanvas(cv, cssH) {
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth || 380;
+  cv.style.height = cssH + 'px'; cv.width = Math.round(w*dpr); cv.height = Math.round(cssH*dpr);
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); return {ctx, w, h:cssH};
+}
+
+function drawDay() {
+  const R = S.res, cv = $('#dayCv'), {ctx, w, h} = setupCanvas(cv, 64);
+  ctx.clearRect(0,0,w,h);
+  const x = m => 4 + (w-8)*m/1440;
+  for (const p of R.tl) { ctx.fillStyle = COLORS[p.st]; ctx.fillRect(x(p.min), 6, Math.ceil((w-8)*2/1440)+0.5, 30); }
+  ctx.fillStyle = '#667085'; ctx.font = '11px system-ui'; ctx.textAlign = 'center';
+  for (let hh = 0; hh <= 24; hh += 3) { ctx.fillRect(x(hh*60), 36, 1, 5); ctx.fillText(hh + 'h', Math.min(w-10, Math.max(10, x(hh*60))), 54); }
+  const t = +$('#tSlider').value;
+  ctx.fillStyle = '#000'; ctx.fillRect(x(t)-1, 2, 2, 38);
+}
+
+function drawPolar() {
+  const R = S.res, cv = $('#polarCv'), W = Math.min(cv.clientWidth || 360, 460);
+  const {ctx, w, h} = setupCanvas(cv, W);
+  const cx = w/2, cy = h/2, rad = Math.min(w, h)/2 - 18;
+  const pt = (az, el) => { const r = rad*(90 - Math.max(el, -2))/90, a = az*Math.PI/180; return [cx + r*Math.sin(a), cy - r*Math.cos(a)]; };
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = '#eef3fb'; ctx.beginPath(); ctx.arc(cx, cy, rad, 0, 2*Math.PI); ctx.fill();
+  // façade : demi-ciel derrière le mur
+  if (R.normal != null) {
+    ctx.fillStyle = 'rgba(29,36,51,.10)'; ctx.beginPath(); ctx.moveTo(cx, cy);
+    for (let d = 90; d <= 270; d += 2) { const [x,y] = pt(R.normal + d, 0); ctx.lineTo(x, y); }
+    ctx.closePath(); ctx.fill();
+  }
+  // obstacles
+  ctx.fillStyle = '#9aa3b5'; ctx.beginPath();
+  for (let i = 0; i <= C.N_AZ; i++) { const az = (i % C.N_AZ)*0.5, el = Math.max(0, R.hz[i % C.N_AZ]); const [x,y] = pt(az, el); i ? ctx.lineTo(x,y) : ctx.moveTo(x,y); }
+  for (let i = C.N_AZ; i >= 0; i--) { const [x,y] = pt((i % C.N_AZ)*0.5, 0); ctx.lineTo(x,y); }
+  ctx.closePath(); ctx.fill();
+  // cercles
+  ctx.strokeStyle = 'rgba(29,36,51,.18)'; ctx.lineWidth = 1;
+  for (const e of [0, 30, 60]) { ctx.beginPath(); ctx.arc(cx, cy, rad*(90-e)/90, 0, 2*Math.PI); ctx.stroke(); }
+  ctx.fillStyle = '#667085'; ctx.font = '10px system-ui'; ctx.textAlign = 'left';
+  ctx.fillText('30°', cx + 3, cy - rad*60/90 + 11); ctx.fillText('60°', cx + 3, cy - rad*30/90 + 11);
+  ctx.font = '600 12px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#1d2433';
+  [['N',0],['E',90],['S',180],['O',270]].forEach(([s,a]) => { const r = rad + 10, aa = a*Math.PI/180; ctx.fillText(s, cx + r*Math.sin(aa), cy - r*Math.cos(aa) + 4); });
+  // trajectoires
+  const D = R.D;
+  const path = (y,m,d,color,dash,labels) => {
+    ctx.strokeStyle = color; ctx.lineWidth = 2.2; ctx.setLineDash(dash); ctx.beginPath(); let on = false;
+    for (let mi = 0; mi <= 1440; mi += 6) {
+      const s = C.solarPosition(C.parisToUTC(y,m,d,mi), R.ll.lat, R.ll.lon);
+      if (s.el < -0.5) { on = false; continue; }
+      const [x,yy] = pt(s.az, s.el); on ? ctx.lineTo(x,yy) : ctx.moveTo(x,yy); on = true;
+    }
+    ctx.stroke(); ctx.setLineDash([]);
+    if (labels) {
+      ctx.font = '10px system-ui'; ctx.fillStyle = color; ctx.textAlign = 'center';
+      for (let hh = 0; hh < 24; hh++) {
+        const s = C.solarPosition(C.parisToUTC(y,m,d,hh*60), R.ll.lat, R.ll.lon);
+        if (s.el < 1) continue;
+        const [x,yy] = pt(s.az, s.el); ctx.beginPath(); ctx.arc(x, yy, 2.5, 0, 2*Math.PI); ctx.fill(); ctx.fillText(hh + 'h', x, yy - 5);
+      }
+    }
+  };
+  path(D.y, 6, 21, '#d9a400', [5,4], false);
+  path(D.y, 12, 21, '#2f5bd3', [5,4], false);
+  path(D.y, D.m, D.d, '#e07a1f', [], true);
+  // façade : flèche normale
+  if (R.normal != null) {
+    const [x,y] = pt(R.normal, 0); ctx.strokeStyle = '#2f5bd3'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(x, y); ctx.stroke();
+  }
+  // soleil à l'heure du curseur
+  const t = +$('#tSlider').value, s = C.solarPosition(C.parisToUTC(D.y, D.m, D.d, t), R.ll.lat, R.ll.lon);
+  if (s.el > -0.5) { const [x,y] = pt(s.az, s.el); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x,y,8,0,2*Math.PI); ctx.fill();
+    ctx.fillStyle = '#f2a20c'; ctx.beginPath(); ctx.arc(x,y,6,0,2*Math.PI); ctx.fill(); }
+}
+
+let yearGeom = null;
+function drawYear() {
+  const R = S.res, facMode = R.normal != null, rows = R.yg, cols = rows[0].cells.length;
+  const cv = $('#yearCv'), rh = 2, top = 18, left = 42;
+  const {ctx, w, h} = setupCanvas(cv, top + rows.length*rh + 4);
+  const cw = (w - left - 4)/cols;
+  ctx.clearRect(0,0,w,h);
+  rows.forEach((r, i) => { for (let c = 0; c < cols; c++) { ctx.fillStyle = COLORS[r.cells[c]]; ctx.fillRect(left + c*cw, top + i*rh, cw + 0.6, rh + 0.4); } });
+  ctx.fillStyle = '#667085'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
+  for (let hh = 6; hh <= 22; hh += 2) { const c = (hh*60 - 240)/10; if (c < 0 || c > cols) continue; ctx.fillText(hh + 'h', left + c*cw, 12); }
+  ctx.textAlign = 'right';
+  rows.forEach((r, i) => { if (r.d <= 2) ctx.fillText(MON3[r.m-1], left - 4, top + i*rh + 9); });
+  // date choisie
+  const D = R.D, idx = rows.findIndex(r => r.m === D.m && Math.abs(r.d - D.d) <= 1);
+  if (idx >= 0) { ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.strokeRect(left - 1, top + idx*rh - 1, w - left - 3, rh + 2); }
+  yearGeom = {left, top, rh, cw, cols};
+  $('#yearTitle').textContent = facMode ? 'Toute l\'année : quand la façade est éclairée' : 'Toute l\'année : quand le point est au soleil';
+  const items = facMode ? [[ST.FACE,'de face'],[ST.RASANT,'rasant'],[ST.OMBRE,'ombre'],[ST.NUIT,'nuit']]
+                        : [[ST.SOLEIL,'soleil'],[ST.DOREE,'lumière dorée'],[ST.OMBRE,'ombre'],[ST.NUIT,'nuit']];
+  $('#yearLegend').innerHTML = items.map(([s,t]) => '<span><i class="dot" style="background:' + COLORS[s] + '"></i>' + t + '</span>').join('') + '<span>heures de Paris (heure d\'été incluse)</span>';
+}
+$('#yearCv').addEventListener('click', e => {
+  if (!S.res || !yearGeom) return;
+  const r = e.target.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, G = yearGeom;
+  const i = Math.floor((y - G.top)/G.rh), c = Math.floor((x - G.left)/G.cw);
+  const row = S.res.yg[i]; if (!row || c < 0 || c >= G.cols) return;
+  const st = row.cells[c];
+  $('#ginfo').innerHTML = '<b>' + row.d + ' ' + MONTHS[row.m-1] + ', ' + hm(240 + c*10) + '</b> : ' + STATE_TXT[st] +
+    ' <button class="chip" id="goDay">Voir ce jour</button>';
+  $('#goDay').onclick = () => { $('#date').value = row.y + '-' + String(row.m).padStart(2,'0') + '-' + String(row.d).padStart(2,'0'); compute(); $('#tSlider').value = 240 + c*10; updateTime(true); };
+});
+
+function fillMonths() {
+  const R = S.res, facMode = R.normal != null, tb = $('#monthTbl'); tb.innerHTML = '';
+  $('#monthTitle').textContent = facMode ? 'Mois par mois : façade éclairée (le 15)' : 'Mois par mois : créneaux au soleil (le 15)';
+  for (let m = 1; m <= 12; m++) {
+    const tl = C.dayTimeline(R.D.y, m, 15, R.ll.lat, R.ll.lon, R.hz, R.normal, 5);
+    const segs = C.segments(tl, 5);
+    let parts;
+    if (facMode) parts = segs.filter(s => s.st === ST.FACE).map(s => hm(s.start) + '–' + hm(s.end));
+    else parts = (() => { const out = []; let cur = null;
+      for (const s of segs) { if (isLit(s.st)) { if (cur && cur.end === s.start) cur.end = s.end; else { cur = {start:s.start, end:s.end}; out.push(cur); } } }
+      return out.map(s => hm(s.start) + '–' + hm(s.end)); })();
+    let extra = '';
+    if (facMode && !parts.length) { const r = segs.filter(s => s.st === ST.RASANT).map(s => hm(s.start) + '–' + hm(s.end)); extra = r.length ? 'rasant seulement : ' + r.join(', ') : ''; }
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + MONTHS[m-1] + '</td><td>' + (parts.length ? parts.join(', ') : (extra || '<span style="color:var(--mute)">' + (facMode ? 'pas éclairée' : 'pas de soleil') + '</span>')) + '</td>';
+    tb.appendChild(tr);
+  }
+}
+
+$('#tSlider').addEventListener('input', () => updateTime(false));
+$('#tSlider').addEventListener('change', () => updateTime(true));
+$('#shadowChk').addEventListener('change', () => updateTime(true));
+function updateTime(withShadow) {
+  const R = S.res; if (!R) return;
+  const t = +$('#tSlider').value, D = R.D;
+  const s = C.solarPosition(C.parisToUTC(D.y, D.m, D.d, t), R.ll.lat, R.ll.lon);
+  const st = C.lightState(s, R.hz, R.normal);
+  let txt = '<b>' + hm(t) + '</b> — ';
+  if (s.el <= -0.3) txt += 'soleil couché.';
+  else {
+    txt += 'soleil au ' + dirTxt(s.az) + ' (' + Math.round(s.az) + '°), à ' + s.el.toFixed(0) + '° de hauteur. ';
+    const hz = C.horizonAt(R.hz, s.az);
+    txt += (R.normal != null ? 'Façade ' : 'Point ') + STATE_TXT[st] + '.';
+    if (!isLit(st) && hz > s.el) txt += ' Obstacle dans cette direction jusqu\'à ' + hz.toFixed(0) + '°.';
+    if (R.normal != null && isLit(st)) txt += ' Angle sur la façade : ' + C.incidence(s, R.normal).toFixed(0) + '°.';
+  }
+  $('#tinfo').innerHTML = txt;
+  drawDay(); drawPolar();
+  if (withShadow) drawShadow(s);
+}
+function drawShadow(s) {
+  if (shadowOverlay) { map.removeLayer(shadowOverlay); shadowOverlay = null; }
+  if (!$('#shadowChk').checked || !S.area || s.el <= 0.5) return;
+  const g = S.area.outer, mask = C.shadowMask(g, s, S.area.k);
+  const cv = document.createElement('canvas'); cv.width = g.w; cv.height = g.h;
+  const ctx = cv.getContext('2d'), im = ctx.createImageData(g.w, g.h);
+  for (let i = 0; i < mask.length; i++) if (mask[i]) { im.data[i*4] = 25; im.data[i*4+1] = 35; im.data[i*4+2] = 110; im.data[i*4+3] = 120; }
+  ctx.putImageData(im, 0, 0);
+  const sw = C.fromMerc(g.x0, g.y1 - g.h*g.res), ne = C.fromMerc(g.x0 + g.w*g.res, g.y1);
+  shadowOverlay = L.imageOverlay(cv.toDataURL(), [[sw.lat, sw.lon],[ne.lat, ne.lon]], {opacity:1, interactive:false}).addTo(map);
+}
+window.addEventListener('resize', () => { if (S.res) { drawDay(); drawPolar(); drawYear(); } });
+
+// ---------- recherche d'adresse ----------
+const sIn = $('#search'), sUl = $('#sugg');
+let sTimer = null, sItems = [], sIdx = -1;
+function parseCoords(q) {
+  let m = q.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || q.match(/(-?\d{1,2}\.\d{3,})\s*[,; ]\s*(-?\d{1,3}\.\d{3,})/);
+  if (!m) return null;
+  const a = +m[1], b = +m[2];
+  return (Math.abs(a) <= 90) ? {lat:a, lon:b} : null;
+}
+sIn.addEventListener('input', () => {
+  clearTimeout(sTimer);
+  const q = sIn.value.trim();
+  if (q.length < 3) { sUl.style.display = 'none'; return; }
+  const c = parseCoords(q);
+  if (c) { showSugg([{label:'Coordonnées ' + c.lat.toFixed(5) + ', ' + c.lon.toFixed(5), lat:c.lat, lon:c.lon, coords:true}]); return; }
+  sTimer = setTimeout(async () => {
+    try {
+      const r = await fetch(GEOPF + '/geocodage/completion/?text=' + encodeURIComponent(q) + '&maximumResponses=7');
+      const j = await r.json();
+      showSugg((j.results || []).map(x => ({label:x.fulltext, lat:x.y, lon:x.x, kind:x.kind})));
+    } catch (e) { showSugg([{label:'Recherche indisponible (connexion ?)', none:true}]); }
+  }, 250);
+});
+function showSugg(items) {
+  sItems = items; sIdx = -1; sUl.innerHTML = '';
+  if (!items.length) items = [{label:'Aucun résultat', none:true}];
+  items.forEach((it, i) => { const li = document.createElement('li'); li.textContent = it.label; if (!it.none) li.onclick = () => pickSugg(i); else li.style.color = '#667085'; sUl.appendChild(li); });
+  sUl.style.display = 'block';
+}
+function pickSugg(i) {
+  const it = sItems[i]; if (!it) return;
+  sUl.style.display = 'none'; sIn.value = it.label; sIn.blur();
+  map.setView([it.lat, it.lon], 18);
+  const isAddress = !it.coords && (it.kind === 'housenumber' || it.kind === 'street' || !it.kind);
+  setObs(it.lat, it.lon, {autoSnap: isAddress || it.coords, facadeTarget: S.mode === 'facade'});
+}
+sIn.addEventListener('keydown', e => {
+  const lis = sUl.querySelectorAll('li');
+  if (e.key === 'ArrowDown') { sIdx = Math.min(lis.length-1, sIdx+1); }
+  else if (e.key === 'ArrowUp') { sIdx = Math.max(0, sIdx-1); }
+  else if (e.key === 'Enter') { pickSugg(sIdx >= 0 ? sIdx : 0); e.preventDefault(); return; }
+  else if (e.key === 'Escape') { sUl.style.display = 'none'; return; }
+  else return;
+  lis.forEach((l, i) => l.classList.toggle('on', i === sIdx)); e.preventDefault();
+});
+document.addEventListener('click', e => { if (!e.target.closest('header')) sUl.style.display = 'none'; });
+
+// ---------- lieux enregistrés et lien ----------
+const FKEY = 'reperage-soleil-lieux';
+function loadFavs() { try { return JSON.parse(localStorage.getItem(FKEY) || '[]'); } catch (e) { return []; } }
+function saveFavs(a) { try { localStorage.setItem(FKEY, JSON.stringify(a)); return true; } catch (e) { return false; } }
+function stateObj() {
+  return {m:S.mode, o:[+S.obs.lat.toFixed(6), +S.obs.lon.toFixed(6)], f:S.fac && S.mode === 'facade' ? [+S.fac.lat.toFixed(6), +S.fac.lon.toFixed(6)] : null, h:+$('#height').value};
+}
+function applyState(o) {
+  setMode(o.m || 'point');
+  if (o.h != null) { $('#height').value = o.h; $('#height').dataset.touched = '1'; }
+  if (o.f) { S.fac = {lat:o.f[0], lon:o.f[1]}; facMarker.setLatLng(o.f).addTo(map); }
+  map.setView(o.o, 18);
+  setObs(o.o[0], o.o[1], {});
+}
+function renderFavs() {
+  const box = $('#favList'); box.innerHTML = '';
+  loadFavs().forEach((f, i) => {
+    const b = document.createElement('button'); b.className = 'chip';
+    b.innerHTML = (f.m === 'facade' ? '🏛 ' : '☀ ') + f.name.replace(/</g,'&lt;') + '<b data-del="' + i + '">✕</b>';
+    b.onclick = e => {
+      if (e.target.dataset.del != null) { const a = loadFavs(); a.splice(+e.target.dataset.del, 1); saveFavs(a); renderFavs(); return; }
+      applyState(f);
+    };
+    box.appendChild(b);
+  });
+}
+$('#saveFav').onclick = () => {
+  if (!S.obs) return;
+  const box = $('#favList');
+  const wrap = document.createElement('div'); wrap.className = 'row'; wrap.style.width = '100%';
+  wrap.innerHTML = '<input type="text" id="favName" placeholder="Nom du lieu (ex. Station Gare Lille-Flandres)" style="flex:1;font-size:16px;padding:7px 8px;border:1px solid #e4e2dc;border-radius:8px"><button class="btn" id="favOk">OK</button>';
+  box.prepend(wrap); $('#favName').focus();
+  const ok = () => { const n = $('#favName').value.trim() || sIn.value.trim() || 'Lieu'; const a = loadFavs(); a.unshift(Object.assign({name:n}, stateObj()));
+    if (!saveFavs(a)) $('#favHint').textContent = 'Ce navigateur refuse l\'enregistrement : utilisez « Copier le lien ».'; renderFavs(); };
+  $('#favOk').onclick = ok; $('#favName').addEventListener('keydown', e => { if (e.key === 'Enter') ok(); });
+};
+$('#copyLink').onclick = async () => {
+  const o = stateObj();
+  const hash = 'lieu=' + [o.m, o.o.join(','), o.f ? o.f.join(',') : '', o.h].join('|');
+  const url = location.href.split('#')[0] + '#' + hash;
+  try { await navigator.clipboard.writeText(url); $('#copyLink').textContent = 'Lien copié ✓'; }
+  catch (e) { $('#favHint').innerHTML = 'Copiez ce lien : <br><code style="word-break:break-all">' + url + '</code>'; }
+  setTimeout(() => $('#copyLink').textContent = 'Copier le lien', 2500);
+};
+function readHash() {
+  const m = location.hash.match(/lieu=([^&]+)/); if (!m) return false;
+  const [mode, o, f, h] = decodeURIComponent(m[1]).split('|');
+  const oo = o.split(',').map(Number); if (oo.length !== 2 || oo.some(isNaN)) return false;
+  const ff = f ? f.split(',').map(Number) : null;
+  applyState({m:mode === 'facade' ? 'facade' : 'point', o:oo, f:ff, h:h ? +h : null});
+  return true;
+}
+
+// ---------- démarrage ----------
+setMode('point'); renderFavs();
+readHash();
+})();
+</script>
+</body>
+</html>
