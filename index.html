@@ -74,7 +74,8 @@ details summary{cursor:pointer;color:var(--ink);font-weight:600}
 #tbTime{margin-left:4px;font-size:12.5px;line-height:1.25}
 .tbb{border:0;background:#ebe8e1;border-radius:7px;min-width:30px;height:28px;font:inherit;font-size:14px;cursor:pointer;padding:0 6px}
 #playBtn{background:var(--acc);color:#fff}
-body.tb-on .leaflet-bottom{bottom:96px}
+.tbb.sv{display:inline-flex;align-items:center;text-decoration:none;color:var(--ink);font-size:12.5px;background:#e3ecfb}
+body.tb-on .leaflet-bottom{bottom:122px}
 .src{font-size:12px;color:var(--mute);margin-top:4px}
 </style>
 </head>
@@ -90,6 +91,7 @@ body.tb-on .leaflet-bottom{bottom:96px}
     <div id="timebar" class="hidden">
       <div class="tb-top"><button id="playBtn" class="tbb" title="Faire défiler la journée">▶</button>
         <button id="dPrev" class="tbb" title="Jour précédent">‹</button><span id="tbDate"></span><button id="dNext" class="tbb" title="Jour suivant">›</button>
+        <a id="svLink" class="tbb sv" target="_blank" rel="noopener" title="Ouvrir Google Street View à cet endroit">👁 Street View</a>
         <span id="tbTime"></span></div>
       <canvas id="tbCv"></canvas>
     </div></div>
@@ -1058,11 +1060,25 @@ function setTime(t, quality) {
     const e = C.fromMerc(P.x + Math.sin(s.az*Math.PI/180)*L_, P.y + Math.cos(s.az*Math.PI/180)*L_);
     sunLine.setLatLngs([[S.obs.lat, S.obs.lon],[e.lat, e.lon]]).addTo(map); sunDot.setLatLng([e.lat, e.lon]).addTo(map);
   } else { map.removeLayer(sunLine); map.removeLayer(sunDot); }
+  updateSV(s);
   drawTimebar();
   if (S.res) updatePanelTime(s);
   renderShadow(s, quality === 'hi' ? 'hi' : 'lo');
   clearTimeout(hiTimer);
   if (quality !== 'hi') hiTimer = setTimeout(() => renderShadow(sunAt(S.t), 'hi'), 220);
+}
+// lien Street View : en mode façade on regarde la façade, sinon vers le soleil (ce qui fait de l'ombre)
+function updateSV(s) {
+  const a = $('#svLink'); if (!S.obs) return;
+  let heading, pitch, txt;
+  if (S.res && S.res.normal != null) {
+    heading = (S.res.normal + 180) % 360; pitch = 15; txt = 'Street View face à la façade';
+  } else if (s.el > -0.3) {
+    heading = s.az; pitch = Math.min(40, Math.max(0, Math.round(s.el))); txt = 'Street View vers le soleil (' + hm(S.t) + ')';
+  } else { heading = 180; pitch = 0; txt = 'Street View'; }
+  a.href = 'https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + S.obs.lat.toFixed(6) + '%2C' + S.obs.lon.toFixed(6) +
+    '&heading=' + Math.round(heading) + '&pitch=' + pitch + '&fov=90';
+  a.title = txt + ' (la photo Google la plus proche, prise à une autre date)';
 }
 function updatePanelTime(s) {
   const R = S.res, t = S.t, st = C.lightState(s, R.hz, R.normal);
