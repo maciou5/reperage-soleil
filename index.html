@@ -77,13 +77,20 @@ details summary{cursor:pointer;color:var(--ink);font-weight:600}
 .tbb.sv{display:inline-flex;align-items:center;text-decoration:none;color:var(--ink);font-size:12.5px;background:#e3ecfb}
 body.tb-on .leaflet-bottom{bottom:122px}
 .src{font-size:12px;color:var(--mute);margin-top:4px}
+.srow{display:flex;gap:6px;align-items:center}
+.srow #search{flex:1;min-width:0}
+.geo{display:flex;align-items:center;gap:5px;flex:none;font-size:13.5px;font-weight:600;background:#ebe8e1;border-radius:10px;padding:9px 10px;cursor:pointer;user-select:none;white-space:nowrap}
+.geo input{width:18px;height:18px;margin:0;accent-color:var(--acc2)}
+.geo.on{background:#e3ecfb;color:#1d3f99}
+#nowBtn{background:#1d2433;color:#fff;font-weight:600;font-size:12.5px}
 </style>
 </head>
 <body>
 <div id="app">
 <header>
   <h1>☀ Repérage soleil <span>bâtiments et arbres · données IGN</span></h1>
-  <input id="search" type="search" placeholder="Adresse, lieu ou coordonnées GPS…" autocomplete="off">
+  <div class="srow"><input id="search" type="search" placeholder="Adresse, lieu ou coordonnées GPS…" autocomplete="off">
+    <label class="geo" id="geoLbl" title="Placer le point là où je suis (GPS du téléphone) et le suivre"><input type="checkbox" id="geoChk">📍 Ma position</label></div>
   <ul id="sugg"></ul>
 </header>
 <div id="main">
@@ -91,6 +98,7 @@ body.tb-on .leaflet-bottom{bottom:122px}
     <div id="timebar" class="hidden">
       <div class="tb-top"><button id="playBtn" class="tbb" title="Faire défiler la journée">▶</button>
         <button id="dPrev" class="tbb" title="Jour précédent">‹</button><span id="tbDate"></span><button id="dNext" class="tbb" title="Jour suivant">›</button>
+        <button id="nowBtn" class="tbb" title="Aller à aujourd'hui, à l'heure qu'il est">⏱ Maintenant</button>
         <a id="svLink" class="tbb sv" target="_blank" rel="noopener" title="Ouvrir Google Street View à cet endroit">👁 Street View</a>
         <span id="tbTime"></span></div>
       <canvas id="tbCv"></canvas>
@@ -104,6 +112,7 @@ body.tb-on .leaflet-bottom{bottom:122px}
       <div class="hint" id="howto"></div>
       <div class="row">
         <label>Date<input type="date" id="date"></label>
+        <button class="btn ghost" id="nowBtn2" title="Aller à aujourd'hui, à l'heure qu'il est">⏱ Maintenant</button>
         <label id="hLabel">Hauteur (m)<input type="number" id="height" min="0" max="80" step="0.5" value="1.7"></label>
         <button class="btn" id="goBtn" disabled>Calculer</button>
       </div>
@@ -449,11 +458,11 @@ const obsMarker = L.marker([0,0], {draggable:true, icon:icon('#e07a1f','●')});
 const facMarker = L.marker([0,0], {draggable:true, icon:icon('#2f5bd3','F')});
 let areaRect = null, shadowOverlay = null, normalLine = null, facPointMarker = null;
 
-obsMarker.on('dragend', () => { const p = obsMarker.getLatLng(); setObs(p.lat, p.lng, {fromDrag:true}); });
+obsMarker.on('dragend', () => { geoStop(true); const p = obsMarker.getLatLng(); setObs(p.lat, p.lng, {fromDrag:true}); });
 facMarker.on('dragend', () => { const p = facMarker.getLatLng(); setFac(p.lat, p.lng); });
 map.on('click', e => {
   if (S.mode === 'facade' && S.obs) setFac(e.latlng.lat, e.latlng.lng);
-  else setObs(e.latlng.lat, e.latlng.lng, {});
+  else { geoStop(true); setObs(e.latlng.lat, e.latlng.lng, {}); }
 });
 
 // ---------- mode ----------
@@ -1147,6 +1156,70 @@ function updateTime() { if (S.t != null) setTime(S.t, 'hi'); }
 
 window.addEventListener('resize', () => { if (S.res) { drawDay(); drawPolar(); drawYear(); } });
 
+// ---------- bouton « Maintenant » ----------
+function goNow() {
+  stopPlay();
+  if (!S.obs) { status(S.geo ? 'Recherche de votre position…' : 'Placez d\'abord un point sur la carte, ou cochez « Ma position ».', !S.geo); S.wantNow = true; return; }
+  S.wantNow = false; S.tUser = true; S.t = nowParisMin();
+  const today = todayParis(), changed = $('#date').value !== today;
+  $('#date').value = today;
+  if (changed && S.res) compute(); // recalcule la journée, l'heure est conservée
+  else if (changed) { S.dayKey = null; setTime(S.t, 'hi'); }
+  else setTime(S.t, 'hi');
+  const di = dayInfo(), n = nowParisMin(); // la frise est bornée à la journée (lever − 1 h 15 → coucher + 1 h 15)
+  if (n > di.t1 || n < di.t0) status('Il fait nuit en ce moment : la frise s\'arrête au bord de la journée.');
+}
+$('#nowBtn').onclick = goNow; $('#nowBtn2').onclick = goNow;
+
+// ---------- ma position (GPS du navigateur) ----------
+// Tant que la case est cochée, le point suit la position (recalcul seulement après 12 m de déplacement).
+const GKEY = 'reperage-soleil-geo';
+const geoDot = L.circleMarker([0,0], {radius:7, color:'#fff', weight:2, fillColor:'#2f6fe0', fillOpacity:1, interactive:false});
+const geoAcc = L.circle([0,0], {radius:10, color:'#2f6fe0', weight:1, fillColor:'#2f6fe0', fillOpacity:.12, interactive:false});
+S.geo = null; // {watch, last:{lat,lon}, first}
+function geoSave(v) { try { localStorage.setItem(GKEY, v ? '1' : '0'); } catch (e) {} }
+function geoStop(manual) {
+  if (!S.geo) return;
+  if (S.geo.watch != null) navigator.geolocation.clearWatch(S.geo.watch);
+  S.geo = null; $('#geoChk').checked = false; $('#geoLbl').classList.remove('on');
+  map.removeLayer(geoDot); map.removeLayer(geoAcc);
+  if (manual) { geoSave(false); status('« Ma position » décochée : le point reste où vous l\'avez placé.'); }
+}
+function geoStart() {
+  if (!navigator.geolocation) { $('#geoChk').checked = false; status('Ce navigateur ne donne pas la position.', true); return; }
+  if (S.geo) return;
+  S.geo = {watch:null, last:null, first:true};
+  $('#geoChk').checked = true; $('#geoLbl').classList.add('on'); geoSave(true);
+  status('Recherche de votre position…');
+  S.geo.watch = navigator.geolocation.watchPosition(geoFix, geoErr, {enableHighAccuracy:true, maximumAge:10000, timeout:30000});
+}
+function geoFix(p) {
+  if (!S.geo) return;
+  const lat = p.coords.latitude, lon = p.coords.longitude, acc = p.coords.accuracy || 0;
+  geoDot.setLatLng([lat, lon]).addTo(map); geoAcc.setLatLng([lat, lon]).setRadius(Math.min(acc, 500)).addTo(map);
+  const G = S.geo, last = G.last;
+  const moved = last ? map.distance([last.lat, last.lon], [lat, lon]) : Infinity;
+  if (!G.first && moved < Math.max(12, Math.min(acc, 40))) return; // pas de recalcul pour un petit écart GPS
+  G.last = {lat, lon};
+  if (G.first) { G.first = false; map.setView([lat, lon], Math.max(map.getZoom(), 18)); }
+  else if (!map.getBounds().pad(-0.2).contains([lat, lon])) map.panTo([lat, lon]);
+  setObs(lat, lon, {autoSnap:true, fromGeo:true}).then(() => {
+    if (acc > 30) status('Position approximative (± ' + Math.round(acc) + ' m). Faites glisser le repère si besoin.');
+    if (S.wantNow) goNow();
+  });
+}
+function geoErr(e) {
+  if (!S.geo) return;
+  if (e.code === 3 && S.geo.last) return; // délai dépassé alors qu'on a déjà une position : on continue
+  const msg = e.code === 1 ? 'Accès à la position refusé. Autorisez la localisation pour ce site dans les réglages du navigateur, puis recochez la case.'
+    : e.code === 3 ? 'Position introuvable pour l\'instant (délai dépassé). Réessayez à l\'extérieur.'
+    : 'Position indisponible (GPS ou localisation désactivés ?).';
+  const keep = e.code !== 1 && S.geo.last;
+  if (!keep) { geoStop(false); if (e.code === 1) geoSave(false); }
+  status(msg, true);
+}
+$('#geoChk').addEventListener('change', e => { if (e.target.checked) geoStart(); else geoStop(true); });
+
 // ---------- recherche d'adresse ----------
 const sIn = $('#search'), sUl = $('#sugg');
 let sTimer = null, sItems = [], sIdx = -1;
@@ -1178,7 +1251,7 @@ function showSugg(items) {
 }
 function pickSugg(i) {
   const it = sItems[i]; if (!it) return;
-  sUl.style.display = 'none'; sIn.value = it.label; sIn.blur();
+  sUl.style.display = 'none'; sIn.value = it.label; sIn.blur(); geoStop(true);
   map.setView([it.lat, it.lon], 18);
   const isAddress = !it.coords && (it.kind === 'housenumber' || it.kind === 'street' || !it.kind);
   setObs(it.lat, it.lon, {autoSnap: isAddress || it.coords, facadeTarget: S.mode === 'facade'});
@@ -1202,6 +1275,7 @@ function stateObj() {
   return {m:S.mode, o:[+S.obs.lat.toFixed(6), +S.obs.lon.toFixed(6)], f:S.fac && S.mode === 'facade' ? [+S.fac.lat.toFixed(6), +S.fac.lon.toFixed(6)] : null, h:+$('#height').value};
 }
 function applyState(o) {
+  geoStop(true);
   setMode(o.m || 'point');
   if (o.h != null) { $('#height').value = o.h; $('#height').dataset.touched = '1'; }
   if (o.f) { S.fac = {lat:o.f[0], lon:o.f[1]}; facMarker.setLatLng(o.f).addTo(map); }
@@ -1249,7 +1323,7 @@ function readHash() {
 
 // ---------- démarrage ----------
 setMode('point'); renderFavs();
-readHash();
+if (!readHash()) { let g = null; try { g = localStorage.getItem(GKEY); } catch (e) {} if (g === '1') geoStart(); }
 })();
 </script>
 </body>
